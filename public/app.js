@@ -12,18 +12,18 @@ const options = {
   division: window.gnDivisions,
   category: window.serviceCategories
 };
-const divisionName = value => value === 'Bibile Town' ? 'Bibile' : value;
 const optionKey = (type, value) => ({
   status: 'status.' + statuses[value],
-  division: 'divisions.' + divisionName(value),
   category: 'categories.' + value
 })[type];
-const label = (type, value) => translated(optionKey(type, value), statuses[value] || value);
+const label = (type, value) => type === 'division' ? window.gnDivisionLabel(value) || '—' :
+  translated(optionKey(type, value), statuses[value] || value);
 for (const menu of document.querySelectorAll('[data-options]')) {
   const type = menu.dataset.options;
   for (const value of options[type]) {
     const option = new Option(label(type, value), value);
-    option.dataset.i18n = optionKey(type, value);
+    if (type === 'division') option.lang = 'si';
+    else option.dataset.i18n = optionKey(type, value);
     menu.add(option);
   }
 }
@@ -269,7 +269,7 @@ function renderStaff() {
   rows.replaceChildren();
   const active = [...new FormData(filters)].filter(([, value]) => value);
   const visible = records.filter(record => active.every(([field, value]) =>
-    (field === 'division' ? divisionName(record[field]) : record[field]) === value));
+    (field === 'division' ? window.gnDivisionCode(record[field]) : record[field]) === value));
   select('#staff-empty').textContent = visible.length ? '' : translated('staff.empty', 'No matching complaints.');
   for (const record of visible) {
     const row = document.createElement('tr');

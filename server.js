@@ -6,6 +6,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { randomBytes, timingSafeEqual, createHash } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { gnDivisionCode, gnDivisionLabel } = require('./public/lang.js');
 
 const app = express();
 app.disable('x-powered-by');
@@ -151,7 +152,7 @@ function removePhoto(filename) {
   if (filename) fs.rmSync(path.join(photoDir, filename), { force: true });
 }
 const photoUrl = filename => filename ? '/api/admin/photos/' + filename : null;
-const record = row => ({ ...row, photo: photoUrl(row.photo), proof: photoUrl(row.proof) });
+const record = row => ({ ...row, division: gnDivisionLabel(row.division), photo: photoUrl(row.photo), proof: photoUrl(row.proof) });
 const byTicket = db.prepare('SELECT * FROM complaints WHERE ticket = ?');
 const all = db.prepare('SELECT * FROM complaints WHERE trashedAt IS NULL ORDER BY createdAt DESC, ticket');
 const bin = db.prepare('SELECT * FROM complaints WHERE trashedAt IS NOT NULL ORDER BY trashedAt DESC, ticket');
@@ -198,6 +199,9 @@ app.post('/api/complaints', upload.single('photo'), (req, res) => {
   if (requiredFields.some(field => !fields[formFields.indexOf(field)])) {
     return res.status(400).json({ error: 'Complete all required complaint fields.' });
   }
+  const divisionIndex = formFields.indexOf('division');
+  fields[divisionIndex] = gnDivisionCode(fields[divisionIndex]);
+  if (!fields[divisionIndex]) return res.status(400).json({ error: 'Choose a listed GN division.' });
   const ticket = 'BPS-' + randomBytes(8).toString('hex').toUpperCase();
   const photo = savePhoto(req.file);
   const timestamp = now();
@@ -311,9 +315,8 @@ function csvCell(value) {
   return '"' + text.replaceAll('"', '""') + '"';
 }
 const reportFields = ['ticket', 'category', 'division', 'status', 'response', 'createdAt', 'updatedAt'];
-const canonicalDivision = value => value === 'Bibile Town' ? 'Bibile' : value;
 function reportRow({ ticket, category, division, status, remarks, proof, createdAt, updatedAt }) {
-  return { ticket, category, division: canonicalDivision(division), status, response: remarks?.trim() || proof ? 'responded' : 'unresponded', createdAt, updatedAt };
+  return { ticket, category, division: gnDivisionLabel(division), status, response: remarks?.trim() || proof ? 'responded' : 'unresponded', createdAt, updatedAt };
 }
 function reportFilters(query) {
   const filters = {};
@@ -332,14 +335,17 @@ function reportFilters(query) {
   if (filters.from && filters.to && filters.from > filters.to) throw requestError(400, 'From must be on or before to.');
   if (filters.status && !statuses.includes(filters.status)) throw requestError(400, 'Invalid status.');
   if (filters.response && !['responded', 'unresponded'].includes(filters.response)) throw requestError(400, 'Invalid response.');
-  filters.division = canonicalDivision(filters.division);
+  if (filters.division && !gnDivisionCode(filters.division)) throw requestError(400, 'Invalid GN division.');
+  filters.division = gnDivisionLabel(filters.division);
   filters.lang ||= 'si';
   if (!['si', 'ta', 'en'].includes(filters.lang)) throw requestError(400, 'Invalid language.');
   return filters;
 }
 function chartCounts(rows, field) {
   const counts = new Map();
-  for (const row of rows) counts.set(row[field], (counts.get(row[field]) || 0) + 1);
+  for (const row of rows) {
+    if (field !== 'division' || row[field]) counts.set(row[field], (counts.get(row[field]) || 0) + 1);
+  }
   return [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => a.label.localeCompare(b.label));
 }
 const reportDateKey = new Intl.DateTimeFormat('sv-SE', {

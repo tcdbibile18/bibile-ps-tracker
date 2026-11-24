@@ -4,7 +4,7 @@ const { existsSync } = require('node:fs');
 const path = require('node:path');
 const Excel = require('exceljs');
 const { chromium } = require('playwright-core');
-const { translate, formatTrackerDate } = require('./public/lang.js');
+const { translate, formatTrackerDate, gnDivisionLabel } = require('./public/lang.js');
 
 const palette = ['#0369a1', '#0f766e', '#a21caf', '#b45309', '#4338ca'];
 const headings = {
@@ -34,7 +34,7 @@ function reportContent(model) {
   const localize = (key, value) => {
     if (key === 'status') return t('status.' + statuses[value], value);
     if (key === 'category') return t('categories.' + value, value);
-    if (key === 'division') return t('divisions.' + (value === 'Bibile Town' ? 'Bibile' : value), value);
+    if (key === 'division') return gnDivisionLabel(value);
     if (key === 'response') return t('report.' + value, value);
     return value;
   };

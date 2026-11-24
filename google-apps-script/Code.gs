@@ -11,6 +11,109 @@ const LEGACY_TICKET = /^BPS-(?:[A-F0-9]{16}|[A-F0-9]{32})$/;
 const LAST_TICKET_PROPERTY = 'LAST_COMPLAINT_NUMBER';
 const REPORT_LANGUAGES = ['si', 'en', 'ta'];
 
+const GN_DIVISIONS = Object.freeze({
+  "96": "කෙහෙල්අත්තාවෙල",
+  "96/A": "කරගහවෙල බටහිර",
+  "96/B": "කරගහවෙල නැගෙනහිර",
+  "97": "කොටගම",
+  "97/A": "එගොඩ කොටගම",
+  "98": "යල්කුඹුර",
+  "98/A": "ඊතණවත්ත",
+  "98/B": "මූදියල",
+  "98/C": "තානායම්ගම",
+  "99": "දොඩම්ගොල්ල",
+  "99/A": "කණුල්වෙල",
+  "99/B": "දෙහිඅත්තාවෙල",
+  "99/C": "මැදපිටිය",
+  "100": "බිබිල",
+  "100/A": "කුරුවාඹ",
+  "100/B": "රතුපස්කැටිය",
+  "100/C": "අබේලන්ද",
+  "100/D": "කවුඩැල්ල",
+  "100/E": "හෙවෙල්වෙල",
+  "100/F": "බදුල්ලගම්මන",
+  "101": "බොකාගොන්න",
+  "101/A": "පිටකුඹුර",
+  "101/B": "නාගල",
+  "101/C": "ළිඳකුඹුර",
+  "101/D": "කොකුන්නෑව",
+  "101/E": "මොරත්තමුල්ල",
+  "102": "වෑගම උතුර",
+  "102/A": "රදලියද්ද",
+  "102/B": "මල්ලැහැව",
+  "102/C": "වෑගම දකුණ",
+  "102/D": "අඹගොල්ල",
+  "102/E": "උස්සාගල",
+  "102/F": "කණවේගල්ල",
+  "102/G": "උඩමල්ලැහැව",
+  "103": "නිල්ගල",
+  "103/A": "හාමාපොල",
+  "103/B": "බුළුපිටිය",
+  "103/C": "තොටිල්ලකැටිය",
+  "103/D": "කරාඬුගල",
+  "103/E": "ඌරාවුල"
+});
+
+// Read historical records stored before forms started sending GN division codes.
+const LEGACY_GN_DIVISIONS = Object.freeze({
+  "Kehelaththawela": "96",
+  "Karagahawela West": "96/A",
+  "Karagahawela East": "96/B",
+  "Kotagama": "97",
+  "Egoda Kotagama": "97/A",
+  "Yalkumbura": "98",
+  "Ethanawaththa": "98/A",
+  "Mudiyala": "98/B",
+  "Thanayamgama": "98/C",
+  "Dodamgolla": "99",
+  "Kanulwela": "99/A",
+  "Dehiaththawela": "99/B",
+  "Medapitiya": "99/C",
+  "Bibile": "100",
+  "Kuruwamba": "100/A",
+  "Rathupasketiya": "100/B",
+  "Ambelanda": "100/C",
+  "Kaudella": "100/D",
+  "Hewelwela": "100/E",
+  "Badullagammana": "100/F",
+  "Bokagonna": "101",
+  "Pitakumbura": "101/A",
+  "Nagala": "101/B",
+  "Lindakumbura": "101/C",
+  "Kokunnawa": "101/D",
+  "Moraththamulla": "101/E",
+  "Wegama North": "102",
+  "Radaliyadda": "102/A",
+  "Mallahawa": "102/B",
+  "Wegama South": "102/C",
+  "Ambagolla": "102/D",
+  "Ussagala": "102/E",
+  "Kanawegalla": "102/F",
+  "Uda Mallahewa": "102/G",
+  "Nilgala": "103",
+  "Hamapola": "103/A",
+  "Bulupitiya": "103/B",
+  "Thotillaketiya": "103/C",
+  "Karandugala": "103/D",
+  "Uraula": "103/E",
+  "Bibile Town": "100"
+});
+
+function gnDivisionCode(value) {
+  if (typeof value !== 'string') return '';
+  const input = value.trim();
+  if (Object.prototype.hasOwnProperty.call(GN_DIVISIONS, input)) return input;
+  if (Object.prototype.hasOwnProperty.call(LEGACY_GN_DIVISIONS, input)) return LEGACY_GN_DIVISIONS[input];
+  const code = input.split(' ', 1)[0];
+  if (Object.prototype.hasOwnProperty.call(GN_DIVISIONS, code) && input === code + ' ' + GN_DIVISIONS[code]) return code;
+  return '';
+}
+
+function gnDivisionLabel(value) {
+  const code = gnDivisionCode(value);
+  return code ? code + ' ' + GN_DIVISIONS[code] : '';
+}
+
 function settings_() {
   return PropertiesService.getScriptProperties();
 }
@@ -189,7 +292,10 @@ function find_(sheet, ticket) {
 
 function writeRecord_(sheet, row, record) {
   // Plain text columns and a leading apostrophe keep citizen input from becoming a Sheets formula.
-  const cells = COLUMNS.map(key => record[key] ? "'" + record[key] : '');
+  const cells = COLUMNS.map(key => {
+    const value = key === 'division' ? gnDivisionLabel(record.division) : record[key];
+    return value ? "'" + value : '';
+  });
   const serialized = JSON.stringify(record);
   if (serialized.length > 45000) fail_(400);
   cells.push(serialized);
@@ -202,7 +308,7 @@ function summary_({ticket, status, category, createdAt, updatedAt}) {
 
 function staffRecord_(record) {
   const {history, photo, proof, ...fields} = record;
-  return {...fields, photo: Boolean(photo), proof: Boolean(proof)};
+  return {...fields, division: gnDivisionLabel(record.division), photo: Boolean(photo), proof: Boolean(proof)};
 }
 
 function text_(value, max, optional = false) {
@@ -264,6 +370,8 @@ function submit_(data) {
   for (const field of FIELDS) {
     fields[field] = text_(data[field], field === 'description' ? 8000 : 300, field === 'nic');
   }
+  fields.division = gnDivisionCode(fields.division);
+  if (!fields.division) fail_(400);
   const lang = REPORT_LANGUAGES.includes(data.lang) ? data.lang : 'si';
   const timestamp = new Date().toISOString();
   const record = {...fields, lang, status: 'pending', remarks: '', createdAt: timestamp, updatedAt: timestamp,
@@ -442,47 +550,7 @@ const REPORT_TEXT = {
   "categories.Water Bowser": ["ජල බවුසර්","Water Bowser","நீர் பவுசர் சேவை"],
   "categories.Gully Bowser": ["ගලි බවුසර්","Gully Bowser","கழிவுநீர் பவுசர் சேவை"],
   "categories.Property Rates": ["වරිපනම්","Property Rates","சொத்து வரி"],
-  "categories.Other": ["වෙනත්","Other","ஏனையவை"],
-  "divisions.Kehelaththawela": ["96 — කෙහෙලත්තාවෙල","96 — Kehelaththawela","96 — கெஹெலத்தாவெல"],
-  "divisions.Karagahawela West": ["96/A — කරගහවෙල බටහිර","96/A — Karagahawela West","96/A — கரகஹவெல மேற்கு"],
-  "divisions.Karagahawela East": ["96/B — කරගහවෙල නැගෙනහිර","96/B — Karagahawela East","96/B — கரகஹவெல கிழக்கு"],
-  "divisions.Kotagama": ["97 — කොටගම","97 — Kotagama","97 — கொட்டகம"],
-  "divisions.Egoda Kotagama": ["97/A — එගොඩ කොටගම","97/A — Egoda Kotagama","97/A — எகொட கொட்டகம"],
-  "divisions.Yalkumbura": ["98 — යල්කුඹුර","98 — Yalkumbura","98 — யல்கும்புர"],
-  "divisions.Ethanawaththa": ["98/A — ඇතනාවත්ත","98/A — Ethanawaththa","98/A — எத்தனாவத்த"],
-  "divisions.Mudiyala": ["98/B — මුදියල","98/B — Mudiyala","98/B — முதியல"],
-  "divisions.Thanayamgama": ["98/C — තානායම්ගම","98/C — Thanayamgama","98/C — தானாயம்கம"],
-  "divisions.Dodamgolla": ["99 — දොඩම්ගොල්ල","99 — Dodamgolla","99 — தொடம்கொல்ல"],
-  "divisions.Kanulwela": ["99/A — කණුල්වෙල","99/A — Kanulwela","99/A — கணுல்வெல"],
-  "divisions.Dehiaththawela": ["99/B — දෙහිඅත්තාවෙල","99/B — Dehiaththawela","99/B — தெஹிஅத்தாவெல"],
-  "divisions.Medapitiya": ["99/C — මැදපිටිය","99/C — Medapitiya","99/C — மெதபிட்டிய"],
-  "divisions.Bibile": ["100 — බිබිල","100 — Bibile","100 — பிபிலை"],
-  "divisions.Kuruwamba": ["100/A — කුරුවම්බ","100/A — Kuruwamba","100/A — குருவம்ப"],
-  "divisions.Rathupasketiya": ["100/B — රතුපස්කැටිය","100/B — Rathupasketiya","100/B — ரதுபஸ்கெட்டிய"],
-  "divisions.Ambelanda": ["100/C — අඹේලන්ද","100/C — Ambelanda","100/C — அம்பேலந்த"],
-  "divisions.Kaudella": ["100/D — කවුඩැල්ල","100/D — Kaudella","100/D — கவுடெல்ல"],
-  "divisions.Hewelwela": ["100/E — හෙවෙල්වෙල","100/E — Hewelwela","100/E — ஹெவெல்வெல"],
-  "divisions.Badullagammana": ["100/F — බදුල්ලගම්මන","100/F — Badullagammana","100/F — பதுளைகம்மன"],
-  "divisions.Bokagonna": ["101 — බෝකගොන්න","101 — Bokagonna","101 — போககொன்ன"],
-  "divisions.Pitakumbura": ["101/A — පිටකුඹුර","101/A — Pitakumbura","101/A — பிட்டகும்புர"],
-  "divisions.Nagala": ["101/B — නාගල","101/B — Nagala","101/B — நாகல"],
-  "divisions.Lindakumbura": ["101/C — ලිඳකුඹුර","101/C — Lindakumbura","101/C — லிந்தகும்புர"],
-  "divisions.Kokunnawa": ["101/D — කොකුන්නෑව","101/D — Kokunnawa","101/D — கொகுன்னேவ"],
-  "divisions.Moraththamulla": ["101/E — මොරත්තමුල්ල","101/E — Moraththamulla","101/E — மொரத்தமுல்ல"],
-  "divisions.Wegama North": ["102 — වෑගම උතුර","102 — Wegama North","102 — வேகம வடக்கு"],
-  "divisions.Radaliyadda": ["102/A — රදලියද්ද","102/A — Radaliyadda","102/A — ரதலியத்த"],
-  "divisions.Mallahawa": ["102/B — මල්ලහැව","102/B — Mallahawa","102/B — மல்லஹெவ"],
-  "divisions.Wegama South": ["102/C — වෑගම දකුණ","102/C — Wegama South","102/C — வேகம தெற்கு"],
-  "divisions.Ambagolla": ["102/D — අඹගොල්ල","102/D — Ambagolla","102/D — அம்பகொல்ல"],
-  "divisions.Ussagala": ["102/E — උස්සාගල","102/E — Ussagala","102/E — உஸ்ஸாகல"],
-  "divisions.Kanawegalla": ["102/F — කනවේගල්ල","102/F — Kanawegalla","102/F — கனவேகல்ல"],
-  "divisions.Uda Mallahewa": ["102/G — උඩ මල්ලහැව","102/G — Uda Mallahewa","102/G — உட மல்லஹெவ"],
-  "divisions.Nilgala": ["103 — නිල්ගල","103 — Nilgala","103 — நில்கல"],
-  "divisions.Hamapola": ["103/A — හමපොල","103/A — Hamapola","103/A — ஹமபொல"],
-  "divisions.Bulupitiya": ["103/B — බුළුපිටිය","103/B — Bulupitiya","103/B — புலுபிட்டிய"],
-  "divisions.Thotillaketiya": ["103/C — තොටිල්ලකැටිය","103/C — Thotillaketiya","103/C — தொட்டில்லகெட்டிய"],
-  "divisions.Karandugala": ["103/D — කරඬුගල","103/D — Karandugala","103/D — கரண்டுகல"],
-  "divisions.Uraula": ["103/E — ඌරාවුල","103/E — Uraula","103/E — ஊராவுல"]
+  "categories.Other": ["වෙනත්","Other","ஏனையவை"]
 };
 const REPORT_GROUPS = {byStatus: 'status', byCategory: 'category', byDivision: 'division', byResponse: 'response'};
 const REPORT_HEADER_KEYS = ['field.ticket', 'field.category', 'field.division', 'field.status',
@@ -495,7 +563,8 @@ function reportText_(lang, key, fallback) {
 }
 
 function reportValue_(lang, field, value) {
-  const prefixes = {category: 'categories.', division: 'divisions.', response: 'report.'};
+  const prefixes = {category: 'categories.', response: 'report.'};
+  if (field === 'division') return gnDivisionLabel(value);
   if (field === 'status') return reportText_(lang, REPORT_STATUS_KEYS[value], value);
   if (prefixes[field]) return reportText_(lang, prefixes[field] + value, value);
   if (field === 'createdAt' || field === 'updatedAt') return exportDate_(value, lang);
@@ -519,12 +588,12 @@ function report_(data) {
       (filters.status && !STATUSES.includes(filters.status)) ||
       (filters.response && !['responded', 'unresponded'].includes(filters.response)) ||
       !REPORT_LANGUAGES.includes(filters.lang)) fail_(400);
-  const divisionName = value => value === 'Bibile Town' ? 'Bibile' : value;
-  filters.division = divisionName(filters.division);
+  if (filters.division && !gnDivisionCode(filters.division)) fail_(400);
+  filters.division = gnDivisionLabel(filters.division);
   const rows = rows_(sheet_()).reverse().filter(record => !record.trashedAt).map(record => ({
     ...summary_(record),
     lang: REPORT_LANGUAGES.includes(record.lang) ? record.lang : filters.lang,
-    division: divisionName(record.division),
+    division: gnDivisionLabel(record.division),
     response: (record.remarks && record.remarks.trim()) || record.proof ? 'responded' : 'unresponded'
   })).filter(row => {
     if (['category', 'division', 'status', 'response'].some(key => filters[key] && row[key] !== filters[key])) return false;
@@ -539,7 +608,9 @@ function reportCharts_(rows) {
   const charts = {};
   for (const [key, field] of Object.entries(REPORT_GROUPS)) {
     const counts = new Map();
-    for (const row of rows) counts.set(row[field], (counts.get(row[field]) || 0) + 1);
+    for (const row of rows) {
+      if (field !== 'division' || row[field]) counts.set(row[field], (counts.get(row[field]) || 0) + 1);
+    }
     charts[key] = [...counts].map(([label, count]) => ({label, count})).sort((a, b) => a.label.localeCompare(b.label));
   }
   return charts;
