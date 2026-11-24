@@ -1,0 +1,34 @@
+name: Publish complaint tracker
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - name: Configure the static frontend
+        env:
+          APPS_SCRIPT_URL: ${{ vars.APPS_SCRIPT_URL }}
+        run: |
+          node -e 'const fs = require("node:fs"); const url = process.env.APPS_SCRIPT_URL; if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) throw new Error("Set the APPS_SCRIPT_URL repository variable to the deployed Apps Script URL."); fs.writeFileSync("public/config.js", "window.APPS_SCRIPT_URL = " + JSON.stringify(url) + ";\nwindow.STATIC_FRONTEND = true;\n");'
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: public
+      - uses: actions/deploy-pages@v4
+        id: deployment

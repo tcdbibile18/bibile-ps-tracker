@@ -6,6 +6,8 @@ app_port: 7860
 
 # Bibile Pradeshiya Sabha Complaint Tracker
 
+For a static GitHub Pages frontend backed by Google Sheets and Drive, see the [Apps Script setup guide](google-apps-script/README.md).
+
 Use this repository as a Hugging Face Docker Space. Add `ADMIN_PASSWORD` as a Space secret for staff sign-in. The default username is `admin`. Set `COOKIE_SECURE` to `1` for the HTTPS deployment.
 
 For a local Docker run:

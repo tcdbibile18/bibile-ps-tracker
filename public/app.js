@@ -29,6 +29,7 @@ for (const menu of document.querySelectorAll('[data-options]')) {
 }
 
 async function request(path, config) {
+  if (staticBackend) return appsScriptRequest(path, config);
   const response = await fetch(path, { credentials: 'same-origin', ...config });
   if (!response.ok) {
     const error = new Error('Request failed');
@@ -57,7 +58,11 @@ function handleForm(form, action, errorText = 'Something went wrong. Please try 
       await action(new FormData(form));
     } catch (error) {
       const unauthorized = form.id === 'login-form' && [401, 403].includes(error.status);
-      showMessage(form, unauthorized ? 'staff.invalidLogin' : 'common.error',
+      if (error.setup) showMessage(form, 'static.setup', 'The complaint service has not been configured.');
+      else if (staticBackend && error.status === 413) showMessage(form, 'static.photoSize', 'Use a photo up to 2 MB.');
+      else if (staticBackend && error.status === 401 && !unauthorized) {
+        showMessage(form, 'static.session', 'Reload the page and sign in again.');
+      } else showMessage(form, unauthorized ? 'staff.invalidLogin' : 'common.error',
         unauthorized ? 'Check your username and password.' : errorText);
     } finally {
       button.disabled = false;
@@ -99,8 +104,31 @@ function photo(parent, path, key, fallback) {
 
 function renderEvidence(parent, record) {
   if (record.remarks) appendText(parent, 'p', translated('field.remarks', 'Officer remarks') + ' — ' + record.remarks);
+  if (staticBackend) {
+    if (record.photo) void privatePhoto(parent, record.ticket, 'photo', 'track.originalPhoto', 'Original photo');
+    if (record.proof) void privatePhoto(parent, record.ticket, 'proof', 'field.proof', 'Resolution photo');
+    return;
+  }
   photo(parent, record.photo, 'track.originalPhoto', 'Original photo');
   photo(parent, record.proof, 'field.proof', 'Resolution photo');
+}
+
+async function privatePhoto(parent, ticket, kind, key, fallback) {
+  const figure = document.createElement('figure');
+  const caption = appendText(figure, 'figcaption', translated(key, fallback));
+  parent.append(figure);
+  try {
+    const params = new URLSearchParams({ticket, kind});
+    const {mime, base64} = await request('/api/admin/photo?' + params);
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(mime) || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) throw new Error('Invalid photo');
+    const image = document.createElement('img');
+    image.src = 'data:' + mime + ';base64,' + base64;
+    image.alt = '';
+    image.width = 280;
+    figure.prepend(image);
+  } catch {
+    caption.textContent += ' — ' + translated('common.error', 'Could not load the photo.');
+  }
 }
 
 async function refreshStats() {
@@ -155,6 +183,10 @@ function renderTracking() {
 }
 
 if (complaint) {
+  if (staticBackend) {
+    select('[data-i18n="track.query"]', tracker).dataset.i18n = 'static.reference';
+    tracker.elements.q.dataset.i18nPlaceholder = 'static.referencePlaceholder';
+  }
   handleForm(complaint, async body => {
     if (!body.get('nic')?.trim()) body.delete('nic');
     if (!body.get('photo')?.size) body.delete('photo');
@@ -256,6 +288,12 @@ async function loadStaff() {
 }
 
 if (login) {
+  if (staticBackend) {
+    select('[data-staff-view="bin"]').hidden = true;
+    select('[href="/api/admin/export"]').parentElement.hidden = true;
+    select('.report-panel').hidden = true;
+    select('#record-actions').hidden = true;
+  }
   handleForm(login, async body => {
     await request('/api/login', {
       method: 'POST',
