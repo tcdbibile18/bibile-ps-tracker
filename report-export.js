@@ -34,7 +34,7 @@ function reportContent(model) {
   const localize = (key, value) => {
     if (key === 'status') return t('status.' + statuses[value], value);
     if (key === 'category') return t('categories.' + value, value);
-    if (key === 'division') return gnDivisionLabel(value);
+    if (key === 'division') return gnDivisionLabel(value, lang);
     if (key === 'response') return t('report.' + value, value);
     return value;
   };

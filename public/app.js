@@ -16,14 +16,13 @@ const optionKey = (type, value) => ({
   status: 'status.' + statuses[value],
   category: 'categories.' + value
 })[type];
-const label = (type, value) => type === 'division' ? window.gnDivisionLabel(value) || '—' :
+const label = (type, value) => type === 'division' ? window.gnDivisionLabel(value, document.documentElement.lang) || '—' :
   translated(optionKey(type, value), statuses[value] || value);
 for (const menu of document.querySelectorAll('[data-options]')) {
   const type = menu.dataset.options;
   for (const value of options[type]) {
     const option = new Option(label(type, value), value);
-    if (type === 'division') option.lang = 'si';
-    else option.dataset.i18n = optionKey(type, value);
+    if (type !== 'division') option.dataset.i18n = optionKey(type, value);
     menu.add(option);
   }
 }
@@ -345,6 +344,11 @@ if (login) {
 
 function refreshLanguage() {
   const language = document.documentElement.lang || 'si';
+  for (const option of document.querySelectorAll('select[data-options="division"] option[value]:not([value=""])')) {
+    option.textContent = label('division', option.value);
+  }
+  const allExport = select('[data-i18n="staff.export"]');
+  if (allExport && !staticBackend) allExport.href = '/api/admin/export?' + new URLSearchParams({lang: language});
   for (const button of document.querySelectorAll('.language-switcher button')) {
     button.setAttribute('aria-pressed', String(button.lang === language));
   }

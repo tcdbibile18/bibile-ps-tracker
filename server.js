@@ -373,8 +373,9 @@ function reportModel(query) {
   };
   return { rows, charts, filters };
 }
-function sendCsv(res, rows) {
-  const csv = rows.map(row => reportFields.map(field => csvCell(row[field])).join(','));
+function sendCsv(res, rows, lang) {
+  const csv = rows.map(row => reportFields.map(field =>
+    csvCell(field === 'division' ? gnDivisionLabel(row.division, lang) : row[field])).join(','));
   res.attachment('complaints.csv').type('text/csv').send('\uFEFF' + [reportFields.join(','), ...csv].join('\r\n') + '\r\n');
 }
 app.get('/api/admin/export', (req, res) => {
@@ -383,19 +384,19 @@ app.get('/api/admin/export', (req, res) => {
     throw requestError(400, 'Use month=YYYY-MM.');
   }
   const rows = all.all().filter(row => !month || row.createdAt.startsWith(month)).map(reportRow);
-  sendCsv(res, rows);
+  sendCsv(res, rows, reportFilters({lang: req.query.lang}).lang);
 });
 app.get('/api/admin/report', (req, res) => res.json(reportModel(req.query)));
 app.get('/api/admin/report.csv', (req, res) => {
   const { rows, filters } = reportModel(req.query);
-  if (filters.lang !== 'si') return sendCsv(res, rows);
+  if (filters.lang !== 'si') return sendCsv(res, rows, filters.lang);
 
   const { formatTrackerDate } = require('./public/lang.js');
   sendCsv(res, rows.map(row => ({
     ...row,
     createdAt: formatTrackerDate('si', row.createdAt, { dateOnly: false }),
     updatedAt: formatTrackerDate('si', row.updatedAt, { dateOnly: false }),
-  })));
+  })), filters.lang);
 });
 function sendReportFile(method, extension, mime) {
   return async (req, res) => {

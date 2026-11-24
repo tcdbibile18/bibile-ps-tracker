@@ -2,92 +2,53 @@
   'use strict';
 
   const GN_DIVISIONS = Object.freeze({
-    "96": "කෙහෙල්අත්තාවෙල",
-    "96/A": "කරගහවෙල බටහිර",
-    "96/B": "කරගහවෙල නැගෙනහිර",
-    "97": "කොටගම",
-    "97/A": "එගොඩ කොටගම",
-    "98": "යල්කුඹුර",
-    "98/A": "ඊතණවත්ත",
-    "98/B": "මූදියල",
-    "98/C": "තානායම්ගම",
-    "99": "දොඩම්ගොල්ල",
-    "99/A": "කණුල්වෙල",
-    "99/B": "දෙහිඅත්තාවෙල",
-    "99/C": "මැදපිටිය",
-    "100": "බිබිල",
-    "100/A": "කුරුවාඹ",
-    "100/B": "රතුපස්කැටිය",
-    "100/C": "අබේලන්ද",
-    "100/D": "කවුඩැල්ල",
-    "100/E": "හෙවෙල්වෙල",
-    "100/F": "බදුල්ලගම්මන",
-    "101": "බොකාගොන්න",
-    "101/A": "පිටකුඹුර",
-    "101/B": "නාගල",
-    "101/C": "ළිඳකුඹුර",
-    "101/D": "කොකුන්නෑව",
-    "101/E": "මොරත්තමුල්ල",
-    "102": "වෑගම උතුර",
-    "102/A": "රදලියද්ද",
-    "102/B": "මල්ලැහැව",
-    "102/C": "වෑගම දකුණ",
-    "102/D": "අඹගොල්ල",
-    "102/E": "උස්සාගල",
-    "102/F": "කණවේගල්ල",
-    "102/G": "උඩමල්ලැහැව",
-    "103": "නිල්ගල",
-    "103/A": "හාමාපොල",
-    "103/B": "බුළුපිටිය",
-    "103/C": "තොටිල්ලකැටිය",
-    "103/D": "කරාඬුගල",
-    "103/E": "ඌරාවුල"
+    "96": ["කෙහෙල්අත්තාවෙල","கெஹெலத்தாவெல","Kehelaththawela"],
+    "96/A": ["කරගහවෙල බටහිර","கரகஹவெல மேற்கு","Karagahawela West"],
+    "96/B": ["කරගහවෙල නැගෙනහිර","கரகஹவெல கிழக்கு","Karagahawela East"],
+    "97": ["කොටගම","கொட்டகம","Kotagama"],
+    "97/A": ["එගොඩ කොටගම","எகொட கொட்டகம","Egoda Kotagama"],
+    "98": ["යල්කුඹුර","யல்கும்புர","Yalkumbura"],
+    "98/A": ["ඊතණවත්ත","எத்தனாவத்த","Ethanawaththa"],
+    "98/B": ["මූදියල","முதியல","Mudiyala"],
+    "98/C": ["තානායම්ගම","தானாயம்கம","Thanayamgama"],
+    "99": ["දොඩම්ගොල්ල","தொடம்கொல்ல","Dodamgolla"],
+    "99/A": ["කණුල්වෙල","கணுல்வெல","Kanulwela"],
+    "99/B": ["දෙහිඅත්තාවෙල","தெஹிஅத்தாவெல","Dehiaththawela"],
+    "99/C": ["මැදපිටිය","மெதபிட்டிய","Medapitiya"],
+    "100": ["බිබිල","பிபிலை","Bibile"],
+    "100/A": ["කුරුවාඹ","குருவம்ப","Kuruwamba"],
+    "100/B": ["රතුපස්කැටිය","ரதுபஸ்கெட்டிய","Rathupasketiya"],
+    "100/C": ["අබේලන්ද","அம்பேலந்த","Ambelanda"],
+    "100/D": ["කවුඩැල්ල","கவுடெல்ல","Kaudella"],
+    "100/E": ["හෙවෙල්වෙල","ஹெவெல்வெல","Hewelwela"],
+    "100/F": ["බදුල්ලගම්මන","பதுளைகம்மன","Badullagammana"],
+    "101": ["බොකාගොන්න","போககொன்ன","Bokagonna"],
+    "101/A": ["පිටකුඹුර","பிட்டகும்புர","Pitakumbura"],
+    "101/B": ["නාගල","நாகல","Nagala"],
+    "101/C": ["ළිඳකුඹුර","லிந்தகும்புர","Lindakumbura"],
+    "101/D": ["කොකුන්නෑව","கொகுன்னேவ","Kokunnawa"],
+    "101/E": ["මොරත්තමුල්ල","மொரத்தமுல்ல","Moraththamulla"],
+    "102": ["වෑගම උතුර","வேகம வடக்கு","Wegama North"],
+    "102/A": ["රදලියද්ද","ரதலியத்த","Radaliyadda"],
+    "102/B": ["මල්ලැහැව","மல்லஹெவ","Mallahawa"],
+    "102/C": ["වෑගම දකුණ","வேகம தெற்கு","Wegama South"],
+    "102/D": ["අඹගොල්ල","அம்பகொல்ல","Ambagolla"],
+    "102/E": ["උස්සාගල","உஸ்ஸாகல","Ussagala"],
+    "102/F": ["කණවේගල්ල","கனவேகல்ல","Kanawegalla"],
+    "102/G": ["උඩමල්ලැහැව","உட மல்லஹெவ","Uda Mallahewa"],
+    "103": ["නිල්ගල","நில்கல","Nilgala"],
+    "103/A": ["හාමාපොල","ஹமபொல","Hamapola"],
+    "103/B": ["බුළුපිටිය","புலுபிட்டிய","Bulupitiya"],
+    "103/C": ["තොටිල්ලකැටිය","தொட்டில்லகெட்டிய","Thotillaketiya"],
+    "103/D": ["කරාඬුගල","கரண்டுகல","Karandugala"],
+    "103/E": ["ඌරාවුල","ஊராவுல","Uraula"]
   });
 
   // Read historical records stored before forms started sending GN division codes.
-  const LEGACY_GN_DIVISIONS = Object.freeze({
-    "Kehelaththawela": "96",
-    "Karagahawela West": "96/A",
-    "Karagahawela East": "96/B",
-    "Kotagama": "97",
-    "Egoda Kotagama": "97/A",
-    "Yalkumbura": "98",
-    "Ethanawaththa": "98/A",
-    "Mudiyala": "98/B",
-    "Thanayamgama": "98/C",
-    "Dodamgolla": "99",
-    "Kanulwela": "99/A",
-    "Dehiaththawela": "99/B",
-    "Medapitiya": "99/C",
-    "Bibile": "100",
-    "Kuruwamba": "100/A",
-    "Rathupasketiya": "100/B",
-    "Ambelanda": "100/C",
-    "Kaudella": "100/D",
-    "Hewelwela": "100/E",
-    "Badullagammana": "100/F",
-    "Bokagonna": "101",
-    "Pitakumbura": "101/A",
-    "Nagala": "101/B",
-    "Lindakumbura": "101/C",
-    "Kokunnawa": "101/D",
-    "Moraththamulla": "101/E",
-    "Wegama North": "102",
-    "Radaliyadda": "102/A",
-    "Mallahawa": "102/B",
-    "Wegama South": "102/C",
-    "Ambagolla": "102/D",
-    "Ussagala": "102/E",
-    "Kanawegalla": "102/F",
-    "Uda Mallahewa": "102/G",
-    "Nilgala": "103",
-    "Hamapola": "103/A",
-    "Bulupitiya": "103/B",
-    "Thotillaketiya": "103/C",
-    "Karandugala": "103/D",
-    "Uraula": "103/E",
-    "Bibile Town": "100"
-  });
+  const LEGACY_GN_DIVISIONS = Object.freeze(Object.fromEntries([
+    ...Object.entries(GN_DIVISIONS).map(([code, names]) => [names[2], code]),
+    ['Bibile Town', '100']
+  ]));
 
   function gnDivisionCode(value) {
     if (typeof value !== 'string') return '';
@@ -95,13 +56,15 @@
     if (Object.prototype.hasOwnProperty.call(GN_DIVISIONS, input)) return input;
     if (Object.prototype.hasOwnProperty.call(LEGACY_GN_DIVISIONS, input)) return LEGACY_GN_DIVISIONS[input];
     const code = input.split(' ', 1)[0];
-    if (Object.prototype.hasOwnProperty.call(GN_DIVISIONS, code) && input === code + ' ' + GN_DIVISIONS[code]) return code;
+    if (Object.prototype.hasOwnProperty.call(GN_DIVISIONS, code) &&
+        GN_DIVISIONS[code].some(name => input === code + ' ' + name)) return code;
     return '';
   }
 
-  function gnDivisionLabel(value) {
+  function gnDivisionLabel(value, lang = 'si') {
     const code = gnDivisionCode(value);
-    return code ? code + ' ' + GN_DIVISIONS[code] : '';
+    const index = lang === 'ta' ? 1 : lang === 'en' ? 2 : 0;
+    return code ? code + ' ' + GN_DIVISIONS[code][index] : '';
   }
 
   const dictionary = {
