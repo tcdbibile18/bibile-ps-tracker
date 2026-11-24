@@ -368,7 +368,7 @@ function mutateRecord_(action, data) {
       }
     } else if (action === 'trash') {
       if (record.status !== 'resolved') fail_(409);
-      record.trashedAt ||= new Date().toISOString();
+      if (!record.trashedAt) record.trashedAt = new Date().toISOString();
     } else {
       record.trashedAt = '';
     }
@@ -391,7 +391,7 @@ function report_(data) {
     if (data[key] != null && typeof data[key] !== 'string') fail_(400);
     filters[key] = text_(data[key], 200, true);
   }
-  filters.lang ||= 'si';
+  if (!filters.lang) filters.lang = 'si';
   for (const value of [filters.from, filters.to]) {
     if (!value) continue;
     const date = new Date(value + 'T00:00:00Z');
@@ -407,7 +407,7 @@ function report_(data) {
   const rows = rows_(sheet_()).reverse().filter(record => !record.trashedAt).map(record => ({
     ...summary_(record),
     division: divisionName(record.division),
-    response: record.remarks?.trim() || record.proof ? 'responded' : 'unresponded'
+    response: (record.remarks && record.remarks.trim()) || record.proof ? 'responded' : 'unresponded'
   })).filter(row => {
     if (['category', 'division', 'status', 'response'].some(key => filters[key] && row[key] !== filters[key])) return false;
     if (!filters.from && !filters.to) return true;
@@ -445,7 +445,7 @@ function exportReport_(report, format) {
   let blob;
   if (format === 'csv') {
     const csv = '\uFEFF' + matrix.map(row => row.map(value => {
-      const cell = String(value ?? '');
+      const cell = String(value == null ? '' : value);
       const safe = /^[\s\uFEFF]*[=+@-]|^[\t\r\n]/.test(cell) ? "'" + cell : cell;
       return '"' + safe.replace(/"/g, '""') + '"';
     }).join(',')).join('\r\n') + '\r\n';
