@@ -456,6 +456,61 @@ function exportReport_(report, format) {
   return {name: 'bibile-complaints.' + format, mime, base64: Utilities.base64Encode(blob.getBytes())};
 }
 
+function styleReportTable_(sheet, start, matrix, headerColor) {
+  const width = matrix[0].length;
+  const range = sheet.getRange(start, 1, matrix.length, width);
+  range.setFontSize(11).setFontColor('#17364d').setWrap(true).setVerticalAlignment('middle')
+    .setBackgrounds(matrix.map((row, index) =>
+      row.map(() => index === 0 ? headerColor : index % 2 ? '#ffffff' : '#eaf5fc')))
+    .setBorder(true, true, true, true, true, true, '#91adc1', SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange(start, 1, 1, width).setFontColor('#ffffff').setFontWeight('bold');
+}
+
+function styleReportTitle_(sheet, lastColumn, title) {
+  sheet.setHiddenGridlines(true);
+  sheet.setRowHeight(1, 34);
+  sheet.getRange(1, 1, 1, lastColumn).merge().setValue(title)
+    .setBackground('#0c4a6e').setFontColor('#ffffff').setFontSize(15).setFontWeight('bold')
+    .setWrap(true).setVerticalAlignment('middle');
+}
+
+function addReportCharts_(book, charts) {
+  const sheet = book.insertSheet('Charts');
+  const titles = ['By status', 'By category', 'By GN division', 'By officer response'];
+  const colors = ['#0369a1', '#15803d', '#7e22ce', '#b45309'];
+  styleReportTitle_(sheet, 8, 'Complaint Report - Summary and Charts');
+  sheet.setColumnWidth(1, 230);
+  sheet.setColumnWidth(2, 76);
+  sheet.setColumnWidth(3, 16);
+  sheet.setColumnWidths(4, 5, 118);
+  let top = 3;
+  Object.keys(REPORT_GROUPS).forEach((key, index) => {
+    const entries = charts[key];
+    const height = Math.max(220, 86 + entries.length * 22);
+    const rows = [[titles[index], 'Count'], ...entries.map(({label, count}) => ["'" + label, count])];
+    const blockRows = entries.length ? Math.max(rows.length, Math.ceil(height / 25)) : rows.length;
+    const end = top + blockRows - 1;
+    if (end > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), end - sheet.getMaxRows());
+    sheet.setRowHeights(top, blockRows, 25);
+    const range = sheet.getRange(top, 1, rows.length, 2);
+    range.setValues(rows);
+    styleReportTable_(sheet, top, rows, colors[index]);
+    sheet.getRange(top, 2, rows.length, 1).setHorizontalAlignment('center');
+    sheet.autoResizeRows(top, rows.length);
+    if (entries.length) {
+      sheet.insertChart(sheet.newChart().setChartType(Charts.ChartType.BAR).addRange(range)
+        .setNumHeaders(1).setPosition(top, 4, 0, 0).setOption('title', titles[index])
+        .setOption('width', 580).setOption('height', height)
+        .setOption('chartArea', {left: '37%', top: 44, width: '58%', height: '72%'})
+        .setOption('legend', {position: 'none'}).setOption('colors', [colors[index]]).build());
+      const tableHeight = rows.reduce((sum, _, offset) => sum + sheet.getRowHeight(top + offset), 0);
+      top += rows.length + Math.ceil(Math.max(0, height - tableHeight) / 25) + 2;
+    } else {
+      top += rows.length + 2;
+    }
+  });
+}
+
 function exportWorkbook_(matrix, charts, format) {
   const book = SpreadsheetApp.create('Bibile Pradeshiya Sabha - Complaint Report');
   try {
@@ -463,35 +518,18 @@ function exportWorkbook_(matrix, charts, format) {
     sheet.setName('Complaints');
     const count = matrix.length + 2;
     if (count > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), count - sheet.getMaxRows());
-    sheet.getRange('A1:G1').merge().setValue('Bibile Pradeshiya Sabha - Complaint Report')
-      .setBackground('#0c4a6e').setFontColor('#ffffff').setFontWeight('bold');
+    styleReportTitle_(sheet, REPORT_COLUMNS.length, 'Bibile Pradeshiya Sabha - Complaint Report');
+    [272, 150, 150, 105, 131, 175, 175].forEach((width, index) => sheet.setColumnWidth(index + 1, width));
     const values = matrix.map(row => row.map(value => value == null || value === '' ? '' : "'" + value));
     sheet.getRange(3, 1, matrix.length, REPORT_COLUMNS.length).setNumberFormat('@').setValues(values);
-    sheet.getRange('A3:G3').setBackground('#0369a1').setFontColor('#ffffff').setFontWeight('bold');
+    styleReportTable_(sheet, 3, matrix, '#0369a1');
+    sheet.autoResizeRows(3, matrix.length);
     sheet.setFrozenRows(3);
-    sheet.autoResizeColumns(1, REPORT_COLUMNS.length);
-    const summary = book.insertSheet('Charts');
-    const titles = ['By status', 'By category', 'By GN division', 'By officer response'];
-    const colors = ['#0369a1', '#15803d', '#7e22ce', '#b45309'];
-    Object.values(charts).forEach((entries, index) => {
-      const top = summary.getLastRow() + 2;
-      const rows = [[titles[index], 'Count'], ...entries.map(({label, count}) => ["'" + label, count])];
-      const end = top + Math.max(rows.length, 18);
-      if (end > summary.getMaxRows()) summary.insertRowsAfter(summary.getMaxRows(), end - summary.getMaxRows());
-      const range = summary.getRange(top, 1, rows.length, 2);
-      range.setValues(rows);
-      summary.getRange(top, 1, 1, 2).setBackground(colors[index]).setFontColor('#ffffff').setFontWeight('bold');
-      if (!entries.length) return;
-      summary.insertChart(summary.newChart().setChartType(Charts.ChartType.BAR).addRange(range)
-        .setNumHeaders(1).setPosition(top, 4, 0, 0).setOption('title', titles[index])
-        .setOption('legend', {position: 'none'}).setOption('colors', [colors[index]]).build());
-      // Reserve space before the next chart even when a series has only a few entries.
-      summary.getRange(end, 1).setValue(' ');
-    });
-    summary.autoResizeColumns(1, 2);
+    addReportCharts_(book, charts);
     SpreadsheetApp.flush();
     const url = 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(book.getId()) +
-      '/export?format=' + format + (format === 'pdf' ? '&size=A4&portrait=false&fitw=true&gridlines=false' : '');
+      '/export?format=' + format + (format === 'pdf' ?
+        '&size=A4&portrait=false&fitw=true&gridlines=false&fzr=true&top_margin=0.40&bottom_margin=0.40&left_margin=0.40&right_margin=0.40' : '');
     const response = UrlFetchApp.fetch(url, {
       headers: {Authorization: 'Bearer ' + ScriptApp.getOAuthToken()},
       muteHttpExceptions: true
