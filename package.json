@@ -1,0 +1,1 @@
+{"name":"bibile-ps-tracker","version":"1.0.0","private":true,"engines":{"node":">=22.13.0"},"scripts":{"start":"node server.js"},"dependencies":{"exceljs":"^4.4.0","express":"^5.1.0","multer":"^2.0.2","playwright-core":"^1.65.1"},"overrides":{"exceljs":{"uuid":"11.1.1"}}}

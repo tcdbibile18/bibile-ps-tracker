@@ -1,0 +1,26 @@
+﻿@media (prefers-reduced-motion: no-preference) {
+  dialog.ticket-dialog[open] {
+    animation: ticket-enter 200ms ease-out;
+  }
+
+  dialog.ticket-dialog[open]::backdrop {
+    animation: ticket-backdrop-enter 160ms ease-out;
+  }
+}
+
+@keyframes ticket-enter {
+  from {
+    opacity: 0;
+    scale: 0.98;
+  }
+
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes ticket-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="si">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="citizen.title">Citizen portal</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="motion.css">
+<script defer src="lang.js"></script>
+<script defer src="app.js"></script>
+</head>
+<body>
+<header class="site-header"><div class="container"><a href="index.html"><img src="assets/logo.jpg" alt="" width="56" height="56"><span data-i18n="site.name">Bibile Pradeshiya Sabha</span></a><div class="language-switcher"><button type="button" lang="si" aria-pressed="true" onclick="setLanguage('si')">සිංහල</button><button type="button" lang="ta" aria-pressed="false" onclick="setLanguage('ta')">தமிழ்</button><button type="button" lang="en" aria-pressed="false" onclick="setLanguage('en')">English</button></div></div></header>
+<main class="container">
+
+<section class="hero"><h1 data-i18n="citizen.title">Citizen complaint and service tracker</h1><p data-i18n="citizen.intro">Report a local issue or check progress on an existing complaint.</p></section>
+<section class="stats-grid" aria-label="Statistics" data-i18n-aria-label="stats.title"><div class="card"><span data-i18n="stats.total">Total complaints</span> <strong data-count="total">—</strong></div><div class="card"><span data-i18n="stats.pending">Pending</span> <strong data-count="pending">—</strong></div><div class="card"><span data-i18n="stats.inProgress">In progress</span> <strong data-count="inProgress">—</strong></div><div class="card"><span data-i18n="stats.resolved">Resolved</span> <strong data-count="resolved">—</strong></div></section>
+<section class="card"><h2 data-i18n="complaint.title">Submit a complaint</h2>
+<form id="complaint-form"><div class="form-grid">
+<label><span data-i18n="field.name">Name</span><input name="name" required autocomplete="name"></label><label><span data-i18n="field.phone">Phone number</span><input name="phone" type="tel" required autocomplete="tel"></label><label><span data-i18n="field.nic">NIC (optional)</span><input name="nic" ></label><label><span data-i18n="field.address">Address</span><input name="address" required autocomplete="street-address"></label>
+<label><span data-i18n="field.division">GN division</span><select name="division" data-options="division" required><option value="" data-i18n="form.select">Select an option</option></select></label><label><span data-i18n="field.category">Category</span><select name="category" data-options="category" required><option value="" data-i18n="form.select">Select an option</option></select></label>
+<label><span data-i18n="field.description">Description</span><textarea name="description" required rows="4"></textarea></label>
+<label><span data-i18n="field.photo">Photo (optional)</span><input name="photo" type="file" accept="image/*"></label>
+</div><button class="btn"  data-i18n="complaint.submit">Submit complaint</button><p data-message role="status" aria-live="polite"></p></form></section>
+<section class="card"><h2 data-i18n="track.title">Track a complaint</h2>
+<form id="track-form"><label><span data-i18n="track.query">Ticket ID or phone number</span><input name="q" required data-i18n-placeholder="track.placeholder" placeholder="Enter ticket ID or phone number"></label><button class="btn"  data-i18n="track.submit">Track</button><p data-message role="status" aria-live="polite"></p></form>
+<div id="track-results" aria-live="polite"></div></section>
+<dialog id="ticket-dialog" class="modal ticket-dialog" aria-labelledby="ticket-title">
+<div class="receipt" data-print-receipt><img src="assets/logo.jpg" alt="" width="56" height="56"><span data-i18n="site.name">Bibile Pradeshiya Sabha</span>
+<h2 id="ticket-title" data-i18n="receipt.title">Complaint received</h2>
+<span data-i18n="field.ticket">Ticket ID</span> <strong id="receipt-ticket"></strong>
+<p><span data-i18n="receipt.date">Date submitted</span> <time id="receipt-date"></time></p></div>
+<div class="no-print"><button class="btn" type="button" id="copy-ticket" data-i18n="receipt.copy">Copy ticket ID</button><button class="btn" type="button" id="print-ticket" data-i18n="receipt.print">Print receipt</button><form method="dialog"><button class="btn"  data-i18n="common.close">Close</button></form><p data-message role="status" aria-live="polite"></p></div></dialog>
+</main>
+<footer class="site-footer">
+  <div class="container footer-layout">
+    <div class="footer-brand">
+      <img src="assets/logo.jpg" alt="" width="56" height="56">
+      <div>
+        <strong data-i18n="site.name">බිබිල ප්‍රාදේශීය සභාව</strong>
+        <address data-i18n="contact.address">ප්‍රධාන වීදිය, බිබිල</address>
+      </div>
+    </div>
+    <ul class="footer-contact">
+      <li><span data-i18n="contact.phone">දුරකථන</span> <a href="tel:+94552265475">055 2265475</a></li>
+      <li><span data-i18n="contact.website">වෙබ් අඩවිය</span> <a href="https://bibile.ps.gov.lk/">bibile.ps.gov.lk</a></li>
+      <li><span data-i18n="contact.email">ඊමේල්</span> <a href="mailto:info.bibile.ps@gmail.com">info.bibile.ps@gmail.com</a></li>
+    </ul>
+    <a href="admin.html" data-i18n="staff.login">නිලධාරී පිවිසුම</a>
+  </div>
+</footer>
+</body>
+</html>
