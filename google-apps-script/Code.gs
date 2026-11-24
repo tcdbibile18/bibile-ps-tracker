@@ -11,22 +11,69 @@ function settings_() {
   return PropertiesService.getScriptProperties();
 }
 
+function resourceId_(value, pathPrefix) {
+  const input = (value || '').trim();
+  const urlPrefix = 'https://' + pathPrefix;
+  const id = input.startsWith(urlPrefix) ? input.slice(urlPrefix.length).split(/[/?#]/, 1)[0] : input;
+  return /^[A-Za-z0-9_-]{15,}$/.test(id) ? id : '';
+}
+
+function spreadsheetId_(properties) {
+  return resourceId_(properties.getProperty('SPREADSHEET_ID'), 'docs.google.com/spreadsheets/d/');
+}
+
+function folderId_(properties) {
+  return resourceId_(properties.getProperty('UPLOAD_FOLDER_ID'), 'drive.google.com/drive/folders/');
+}
+
 function sheet_() {
-  const sheet = SpreadsheetApp.openById(settings_().getProperty('SPREADSHEET_ID')).getSheetByName(TABLE);
-  if (!sheet) throw new Error('Run setup first.');
+  const id = spreadsheetId_(settings_());
+  if (!id) setupRequired_();
+  let spreadsheet;
+  try { spreadsheet = SpreadsheetApp.openById(id); }
+  catch (_) { setupRequired_(); }
+  const sheet = spreadsheet.getSheetByName(TABLE);
+  if (!sheet) setupRequired_();
   return sheet;
+}
+
+function setupRequired_() {
+  throw Object.assign(new Error('Run setup in the Apps Script editor.'), {status: 503, code: 'setup_required'});
+}
+
+function spreadsheetForSetup_(id) {
+  if (id) {
+    try { return SpreadsheetApp.openById(id); }
+    catch (_) { console.warn('Could not open SPREADSHEET_ID. Checking for a bound spreadsheet.'); }
+  }
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) return active;
+  throw new Error('Set SPREADSHEET_ID to an accessible spreadsheet, or run setup from a script bound to a spreadsheet.');
+}
+
+function folderForSetup_(id) {
+  if (!id) return DriveApp.createFolder('Bibile Pradeshiya Sabha Complaint Uploads');
+  try { return DriveApp.getFolderById(id); }
+  catch (_) { throw new Error('UPLOAD_FOLDER_ID is inaccessible. Correct it or clear it to create a private folder.'); }
+}
+
+function uploadFolder_() {
+  const id = folderId_(settings_());
+  if (!id) setupRequired_();
+  try { return DriveApp.getFolderById(id); }
+  catch (_) { setupRequired_(); }
 }
 
 // Run once in the Apps Script editor as the owner.
 function setup() {
   const properties = settings_();
-  const spreadsheet = SpreadsheetApp.openById(properties.getProperty('SPREADSHEET_ID'));
-  DriveApp.getFolderById(properties.getProperty('UPLOAD_FOLDER_ID')).getName();
   const password = properties.getProperty('ADMIN_PASSWORD');
   if (!password || password.length < 16 || password.length > 512) {
     throw new Error('Set ADMIN_PASSWORD to 16–512 characters.');
   }
   locked_(() => {
+    const spreadsheet = spreadsheetForSetup_(spreadsheetId_(properties));
+    const folder = folderForSetup_(folderId_(properties));
     let sheet = spreadsheet.getSheetByName(TABLE);
     if (!sheet) sheet = spreadsheet.insertSheet(TABLE);
     if (sheet.getLastRow() === 0) {
@@ -35,6 +82,8 @@ function setup() {
       sheet.setFrozenRows(1);
       sheet.hideColumns(RECORD_COLUMN);
     }
+    SpreadsheetApp.flush();
+    properties.setProperties({SPREADSHEET_ID: spreadsheet.getId(), UPLOAD_FOLDER_ID: folder.getId()});
   });
 }
 
@@ -56,7 +105,7 @@ function doPost(event) {
     return json_({ok: true, data: dispatch_(payload.action, payload.token, payload.data || {})});
   } catch (error) {
     if (!error.status) console.error('Complaint API operation failed.');
-    return json_({ok: false, status: error.status || 500});
+    return json_({ok: false, status: error.status || 500, code: error.code});
   }
 }
 
@@ -166,7 +215,7 @@ function image_(upload, name) {
   let bytes;
   try { bytes = Utilities.base64Decode(base64); } catch (_) { fail_(400); }
   if (!bytes.length || bytes.length > MAX_PHOTO || !imageSignature_(bytes, mime)) fail_(400);
-  return DriveApp.getFolderById(settings_().getProperty('UPLOAD_FOLDER_ID'))
+  return uploadFolder_()
     .createFile(Utilities.newBlob(bytes, mime, name + IMAGE_TYPES[mime])).getId();
 }
 
