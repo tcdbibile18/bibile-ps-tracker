@@ -6,6 +6,10 @@ const MAX_PHOTO = 2 * 1024 * 1024;
 const COLUMNS = ['ticket', 'status', 'division', 'category', 'createdAt', 'updatedAt', 'name', 'phone',
   'nic', 'address', 'description', 'remarks'];
 const RECORD_COLUMN = COLUMNS.length + 1;
+const SHORT_TICKET = /^BPS-([0-9]{4})$/;
+const LEGACY_TICKET = /^BPS-(?:[A-F0-9]{16}|[A-F0-9]{32})$/;
+const LAST_TICKET_PROPERTY = 'LAST_COMPLAINT_NUMBER';
+const REPORT_LANGUAGES = ['si', 'en', 'ta'];
 
 function settings_() {
   return PropertiesService.getScriptProperties();
@@ -109,8 +113,8 @@ function doPost(event) {
   }
 }
 
-function fail_(status) {
-  throw Object.assign(new Error('Request failed'), {status});
+function fail_(status, code) {
+  throw Object.assign(new Error('Request failed'), {status, code});
 }
 
 function locked_(operation) {
@@ -175,7 +179,8 @@ function rows_(sheet) {
 
 function find_(sheet, ticket) {
   const count = sheet.getLastRow() - 1;
-  if (count < 1 || typeof ticket !== 'string' || !/^BPS-[A-F0-9]{32}$/.test(ticket)) return null;
+  if (count < 1 || typeof ticket !== 'string' ||
+      (!SHORT_TICKET.test(ticket) && !LEGACY_TICKET.test(ticket))) return null;
   const cell = sheet.getRange(2, 1, count, 1).createTextFinder(ticket).matchEntireCell(true).findNext();
   if (!cell) return null;
   const row = cell.getRow();
@@ -234,19 +239,40 @@ function discard_(id) {
   try { DriveApp.getFileById(id).setTrashed(true); } catch (_) { console.error('Drive file cleanup failed.'); }
 }
 
+// Reserve a reference under the script lock and retain the counter after purges.
+function reserveTicket_(sheet) {
+  const properties = settings_();
+  const saved = properties.getProperty(LAST_TICKET_PROPERTY);
+  const last = /^[0-9]{1,4}$/.test(saved || '') ? Number(saved) : 0;
+  const used = new Set();
+  const rowCount = sheet.getLastRow() - 1;
+  if (rowCount > 0) {
+    for (const [value] of sheet.getRange(2, 1, rowCount, 1).getValues()) {
+      const match = SHORT_TICKET.exec(String(value).trim().toUpperCase());
+      if (match) used.add(Number(match[1]));
+    }
+  }
+  let next = last + 1;
+  while (used.has(next)) next++;
+  if (next > 9999) fail_(409, 'reference_exhausted');
+  properties.setProperty(LAST_TICKET_PROPERTY, String(next));
+  return 'BPS-' + String(next).padStart(4, '0');
+}
+
 function submit_(data) {
   const fields = {};
   for (const field of FIELDS) {
     fields[field] = text_(data[field], field === 'description' ? 8000 : 300, field === 'nic');
   }
-  const ticket = 'BPS-' + Utilities.getUuid().replace(/-/g, '').toUpperCase();
+  const lang = REPORT_LANGUAGES.includes(data.lang) ? data.lang : 'si';
   const timestamp = new Date().toISOString();
-  const record = {ticket, ...fields, status: 'pending', remarks: '', createdAt: timestamp, updatedAt: timestamp,
+  const record = {...fields, lang, status: 'pending', remarks: '', createdAt: timestamp, updatedAt: timestamp,
     photo: '', proof: '', history: [{type: 'status', status: 'pending', createdAt: timestamp}]};
   try {
-    record.photo = image_(data.photo, ticket + '-submission');
     locked_(() => {
       const sheet = sheet_();
+      record.ticket = reserveTicket_(sheet);
+      record.photo = image_(data.photo, record.ticket + '-submission');
       const row = sheet.getLastRow() + 1;
       const capacity = sheet.getMaxRows();
       if (row > capacity) sheet.insertRowsAfter(capacity, 1000);
@@ -378,12 +404,103 @@ function mutateRecord_(action, data) {
 }
 
 const REPORT_COLUMNS = ['ticket', 'category', 'division', 'status', 'response', 'createdAt', 'updatedAt'];
-const REPORT_HEADERS = {
-  en: ['Reference', 'Category', 'GN division', 'Status', 'Officer response', 'Submitted', 'Updated'],
-  si: ['යොමු අංකය', 'සේවා කාණ්ඩය', 'ග්‍රාම නිලධාරී වසම', 'තත්ත්වය', 'නිලධාරී පිළිතුර', 'ඉදිරිපත් කළ දිනය', 'යාවත්කාලීන කළ දිනය'],
-  ta: ['குறிப்பு எண்', 'வகை', 'கிராம அலுவலர் பிரிவு', 'நிலை', 'அலுவலர் பதில்', 'சமர்ப்பித்த தேதி', 'புதுப்பித்த தேதி']
+// Report translations from public/lang.js, embedded so this file can be pasted into Apps Script.
+const REPORT_TEXT = {
+  "site.name": ["බිබිල ප්‍රාදේශීය සභාව","Bibile Pradeshiya Sabha","பிபிலை பிரதேச சபை"],
+  "field.ticket": ["පැමිණිලි අංකය","Ticket ID","முறைப்பாட்டு எண்"],
+  "field.category": ["සේවා කාණ්ඩය","Service category","சேவைப் பிரிவு"],
+  "field.division": ["ග්‍රාම නිලධාරී වසම","GN division","கிராம அலுவலர் பிரிவு"],
+  "field.status": ["තත්ත්වය","Status","நிலை"],
+  "field.createdAt": ["ඉදිරිපත් කළ දිනය","Submitted","சமர்ப்பித்த தேதி"],
+  "report.title": ["පැමිණිලි වාර්තා","Complaint reports","முறைப்பாட்டு அறிக்கைகள்"],
+  "report.response": ["නිලධාරී ප්‍රතිචාරයක් තිබේද?","Officer response available","அலுவலரின் பதில் உள்ளதா?"],
+  "report.updatedAt": ["යාවත්කාලීන කළ දිනය","Updated","புதுப்பித்த தேதி"],
+  "report.byStatus": ["තත්ත්වය අනුව පැමිණිලි","Complaints by status","நிலை வாரியான முறைப்பாடுகள்"],
+  "report.byCategory": ["කාණ්ඩය අනුව පැමිණිලි","Complaints by category","பிரிவு வாரியான முறைப்பாடுகள்"],
+  "report.byDivision": ["වසම අනුව පැමිණිලි","Complaints by GN division","கிராம அலுவலர் பிரிவு வாரியான முறைப்பாடுகள்"],
+  "report.byResponse": ["නිලධාරී ප්‍රතිචාරය අනුව පැමිණිලි","Complaints by officer response","அலுவலரின் பதில் வாரியான முறைப்பாடுகள்"],
+  "report.responded": ["ප්‍රතිචාර දී ඇත","Responded","பதிலளிக்கப்பட்டது"],
+  "report.unresponded": ["ප්‍රතිචාරයක් අපේක්ෂාවෙන්","Awaiting response","பதிலுக்காகக் காத்திருக்கிறது"],
+  "report.summary": ["වාර්තා සාරාංශය සහ ප්‍රස්තාර","Report summary and charts","அறிக்கைச் சுருக்கமும் விளக்கப்படங்களும்"],
+  "report.count": ["ගණන","Count","எண்ணிக்கை"],
+  "report.recordsSheet": ["පැමිණිලි","Complaints","முறைப்பாடுகள்"],
+  "report.chartsSheet": ["ප්‍රස්තාර","Charts","விளக்கப்படங்கள்"],
+  "status.Pending": ["සලකා බැලීමට නියමිතයි","Pending","நிலுவையில்"],
+  "status.In Progress": ["කටයුතු සිදු වෙමින් පවතී","In Progress","செயல்பாட்டில்"],
+  "status.Resolved": ["විසඳා ඇත","Resolved","தீர்க்கப்பட்டது"],
+  "categories.Street Lights": ["වීදි පහන්","Street Lights","தெரு விளக்குகள்"],
+  "categories.Garbage Collection": ["කසළ රැස් කිරීම","Garbage Collection","கழிவு சேகரிப்பு"],
+  "categories.Roads & Drains": ["මාර්ග සහ කාණු","Roads & Drains","வீதிகள் மற்றும் வடிகால்கள்"],
+  "categories.Water Supply": ["ජල සැපයුම","Water Supply","நீர் விநியோகம்"],
+  "categories.Building Approvals": ["ගොඩනැගිලි අනුමැතිය","Building Approvals","கட்டட அனுமதிகள்"],
+  "categories.Public Library Services": ["මහජන පුස්තකාල සේවා","Public Library Services","பொது நூலகச் சேவைகள்"],
+  "categories.Preschools": ["පෙරපාසල්","Preschools","முன்பள்ளிகள்"],
+  "categories.Ayurvedic Services": ["ආයුර්වේද සේවා","Ayurvedic Services","ஆயுர்வேத சேவைகள்"],
+  "categories.Crematorium Services": ["ආදාහනාගාර සේවා","Crematorium Services","தகனசாலை சேவைகள்"],
+  "categories.Hall Facilities": ["ශාලා පහසුකම්","Hall Facilities","மண்டப வசதிகள்"],
+  "categories.Sports Grounds": ["ක්‍රීඩාංගන","Sports Grounds","விளையாட்டு மைதானங்கள்"],
+  "categories.Water Bowser": ["ජල බවුසර්","Water Bowser","நீர் பவுசர் சேவை"],
+  "categories.Gully Bowser": ["ගලි බවුසර්","Gully Bowser","கழிவுநீர் பவுசர் சேவை"],
+  "categories.Property Rates": ["වරිපනම්","Property Rates","சொத்து வரி"],
+  "categories.Other": ["වෙනත්","Other","ஏனையவை"],
+  "divisions.Kehelaththawela": ["96 — කෙහෙලත්තාවෙල","96 — Kehelaththawela","96 — கெஹெலத்தாவெல"],
+  "divisions.Karagahawela West": ["96/A — කරගහවෙල බටහිර","96/A — Karagahawela West","96/A — கரகஹவெல மேற்கு"],
+  "divisions.Karagahawela East": ["96/B — කරගහවෙල නැගෙනහිර","96/B — Karagahawela East","96/B — கரகஹவெல கிழக்கு"],
+  "divisions.Kotagama": ["97 — කොටගම","97 — Kotagama","97 — கொட்டகம"],
+  "divisions.Egoda Kotagama": ["97/A — එගොඩ කොටගම","97/A — Egoda Kotagama","97/A — எகொட கொட்டகம"],
+  "divisions.Yalkumbura": ["98 — යල්කුඹුර","98 — Yalkumbura","98 — யல்கும்புர"],
+  "divisions.Ethanawaththa": ["98/A — ඇතනාවත්ත","98/A — Ethanawaththa","98/A — எத்தனாவத்த"],
+  "divisions.Mudiyala": ["98/B — මුදියල","98/B — Mudiyala","98/B — முதியல"],
+  "divisions.Thanayamgama": ["98/C — තානායම්ගම","98/C — Thanayamgama","98/C — தானாயம்கம"],
+  "divisions.Dodamgolla": ["99 — දොඩම්ගොල්ල","99 — Dodamgolla","99 — தொடம்கொல்ல"],
+  "divisions.Kanulwela": ["99/A — කණුල්වෙල","99/A — Kanulwela","99/A — கணுல்வெல"],
+  "divisions.Dehiaththawela": ["99/B — දෙහිඅත්තාවෙල","99/B — Dehiaththawela","99/B — தெஹிஅத்தாவெல"],
+  "divisions.Medapitiya": ["99/C — මැදපිටිය","99/C — Medapitiya","99/C — மெதபிட்டிய"],
+  "divisions.Bibile": ["100 — බිබිල","100 — Bibile","100 — பிபிலை"],
+  "divisions.Kuruwamba": ["100/A — කුරුවම්බ","100/A — Kuruwamba","100/A — குருவம்ப"],
+  "divisions.Rathupasketiya": ["100/B — රතුපස්කැටිය","100/B — Rathupasketiya","100/B — ரதுபஸ்கெட்டிய"],
+  "divisions.Ambelanda": ["100/C — අඹේලන්ද","100/C — Ambelanda","100/C — அம்பேலந்த"],
+  "divisions.Kaudella": ["100/D — කවුඩැල්ල","100/D — Kaudella","100/D — கவுடெல்ல"],
+  "divisions.Hewelwela": ["100/E — හෙවෙල්වෙල","100/E — Hewelwela","100/E — ஹெவெல்வெல"],
+  "divisions.Badullagammana": ["100/F — බදුල්ලගම්මන","100/F — Badullagammana","100/F — பதுளைகம்மன"],
+  "divisions.Bokagonna": ["101 — බෝකගොන්න","101 — Bokagonna","101 — போககொன்ன"],
+  "divisions.Pitakumbura": ["101/A — පිටකුඹුර","101/A — Pitakumbura","101/A — பிட்டகும்புர"],
+  "divisions.Nagala": ["101/B — නාගල","101/B — Nagala","101/B — நாகல"],
+  "divisions.Lindakumbura": ["101/C — ලිඳකුඹුර","101/C — Lindakumbura","101/C — லிந்தகும்புர"],
+  "divisions.Kokunnawa": ["101/D — කොකුන්නෑව","101/D — Kokunnawa","101/D — கொகுன்னேவ"],
+  "divisions.Moraththamulla": ["101/E — මොරත්තමුල්ල","101/E — Moraththamulla","101/E — மொரத்தமுல்ல"],
+  "divisions.Wegama North": ["102 — වෑගම උතුර","102 — Wegama North","102 — வேகம வடக்கு"],
+  "divisions.Radaliyadda": ["102/A — රදලියද්ද","102/A — Radaliyadda","102/A — ரதலியத்த"],
+  "divisions.Mallahawa": ["102/B — මල්ලහැව","102/B — Mallahawa","102/B — மல்லஹெவ"],
+  "divisions.Wegama South": ["102/C — වෑගම දකුණ","102/C — Wegama South","102/C — வேகம தெற்கு"],
+  "divisions.Ambagolla": ["102/D — අඹගොල්ල","102/D — Ambagolla","102/D — அம்பகொல்ல"],
+  "divisions.Ussagala": ["102/E — උස්සාගල","102/E — Ussagala","102/E — உஸ்ஸாகல"],
+  "divisions.Kanawegalla": ["102/F — කනවේගල්ල","102/F — Kanawegalla","102/F — கனவேகல்ல"],
+  "divisions.Uda Mallahewa": ["102/G — උඩ මල්ලහැව","102/G — Uda Mallahewa","102/G — உட மல்லஹெவ"],
+  "divisions.Nilgala": ["103 — නිල්ගල","103 — Nilgala","103 — நில்கல"],
+  "divisions.Hamapola": ["103/A — හමපොල","103/A — Hamapola","103/A — ஹமபொல"],
+  "divisions.Bulupitiya": ["103/B — බුළුපිටිය","103/B — Bulupitiya","103/B — புலுபிட்டிய"],
+  "divisions.Thotillaketiya": ["103/C — තොටිල්ලකැටිය","103/C — Thotillaketiya","103/C — தொட்டில்லகெட்டிய"],
+  "divisions.Karandugala": ["103/D — කරඬුගල","103/D — Karandugala","103/D — கரண்டுகல"],
+  "divisions.Uraula": ["103/E — ඌරාවුල","103/E — Uraula","103/E — ஊராவுல"]
 };
 const REPORT_GROUPS = {byStatus: 'status', byCategory: 'category', byDivision: 'division', byResponse: 'response'};
+const REPORT_HEADER_KEYS = ['field.ticket', 'field.category', 'field.division', 'field.status',
+  'report.response', 'field.createdAt', 'report.updatedAt'];
+const REPORT_STATUS_KEYS = {pending: 'status.Pending', in_progress: 'status.In Progress', resolved: 'status.Resolved'};
+
+function reportText_(lang, key, fallback) {
+  return Object.prototype.hasOwnProperty.call(REPORT_TEXT, key)
+    ? REPORT_TEXT[key][REPORT_LANGUAGES.indexOf(lang)] : fallback;
+}
+
+function reportValue_(lang, field, value) {
+  const prefixes = {category: 'categories.', division: 'divisions.', response: 'report.'};
+  if (field === 'status') return reportText_(lang, REPORT_STATUS_KEYS[value], value);
+  if (prefixes[field]) return reportText_(lang, prefixes[field] + value, value);
+  if (field === 'createdAt' || field === 'updatedAt') return exportDate_(value, lang);
+  return value;
+}
 
 function report_(data) {
   const filters = {};
@@ -401,11 +518,12 @@ function report_(data) {
   if ((filters.from && filters.to && filters.from > filters.to) ||
       (filters.status && !STATUSES.includes(filters.status)) ||
       (filters.response && !['responded', 'unresponded'].includes(filters.response)) ||
-      !Object.prototype.hasOwnProperty.call(REPORT_HEADERS, filters.lang)) fail_(400);
+      !REPORT_LANGUAGES.includes(filters.lang)) fail_(400);
   const divisionName = value => value === 'Bibile Town' ? 'Bibile' : value;
   filters.division = divisionName(filters.division);
   const rows = rows_(sheet_()).reverse().filter(record => !record.trashedAt).map(record => ({
     ...summary_(record),
+    lang: REPORT_LANGUAGES.includes(record.lang) ? record.lang : filters.lang,
     division: divisionName(record.division),
     response: (record.remarks && record.remarks.trim()) || record.proof ? 'responded' : 'unresponded'
   })).filter(row => {
@@ -414,13 +532,17 @@ function report_(data) {
     const day = Utilities.formatDate(new Date(row.createdAt), 'Asia/Colombo', 'yyyy-MM-dd');
     return (!filters.from || day >= filters.from) && (!filters.to || day <= filters.to);
   });
+  return {rows, charts: reportCharts_(rows), filters, groups: localizedReportGroups_(rows, filters.lang)};
+}
+
+function reportCharts_(rows) {
   const charts = {};
   for (const [key, field] of Object.entries(REPORT_GROUPS)) {
     const counts = new Map();
     for (const row of rows) counts.set(row[field], (counts.get(row[field]) || 0) + 1);
     charts[key] = [...counts].map(([label, count]) => ({label, count})).sort((a, b) => a.label.localeCompare(b.label));
   }
-  return {rows, charts, filters};
+  return charts;
 }
 
 const EXPORT_MIME = {
@@ -428,22 +550,53 @@ const EXPORT_MIME = {
 };
 const REPORT_MONTHS_SI = ['ජනවාරි', 'පෙබරවාරි', 'මාර්තු', 'අප්‍රේල්', 'මැයි', 'ජූනි',
   'ජූලි', 'අගෝස්තු', 'සැප්තැම්බර්', 'ඔක්තෝබර්', 'නොවැම්බර්', 'දෙසැම්බර්'];
+const REPORT_MONTHS_TA = ['ஜனவரி', 'பிப்ரவரி', 'மார்ச்', 'ஏப்ரல்', 'மே', 'ஜூன்',
+  'ஜூலை', 'ஆகஸ்ட்', 'செப்டம்பர்', 'அக்டோபர்', 'நவம்பர்', 'டிசம்பர்'];
 
 function exportDate_(value, lang) {
   const date = new Date(value);
-  if (lang !== 'si') return Utilities.formatDate(date, 'Asia/Colombo', 'yyyy-MM-dd HH:mm');
+  if (!value || !Number.isFinite(date.getTime())) return '';
+  if (lang === 'en') return Utilities.formatDate(date, 'Asia/Colombo', 'yyyy-MM-dd HH:mm');
   const [year, month, day, time] = Utilities.formatDate(date, 'Asia/Colombo', 'yyyy-M-dd-HH:mm').split('-');
-  return year + ' ' + REPORT_MONTHS_SI[Number(month) - 1] + ' ' + day + ' ' + time;
+  const months = lang === 'ta' ? REPORT_MONTHS_TA : REPORT_MONTHS_SI;
+  return year + ' ' + months[Number(month) - 1] + ' ' + day + ' ' + time;
+}
+
+function localizedReportGroups_(rows, fallbackLanguage) {
+  const languages = [fallbackLanguage, ...REPORT_LANGUAGES.filter(lang => lang !== fallbackLanguage)];
+  return languages.map(lang => ({lang, records: rows.filter(row => row.lang === lang)}))
+    .filter(({lang, records}) => records.length || (!rows.length && lang === fallbackLanguage))
+    .map(({lang, records}) => {
+      const t = key => reportText_(lang, key);
+      const charts = reportCharts_(records);
+      return {
+        lang,
+        title: t('site.name') + ' – ' + t('report.title'),
+        summaryTitle: t('report.summary'),
+        recordsSheet: t('report.recordsSheet'),
+        chartsSheet: t('report.chartsSheet'),
+        countLabel: t('report.count'),
+        headers: REPORT_HEADER_KEYS.map(t),
+        rows: records.map(row => REPORT_COLUMNS.map(field => reportValue_(lang, field, row[field]))),
+        charts: Object.keys(REPORT_GROUPS).map(key => ({
+          key, title: t('report.' + key),
+          entries: charts[key].map(({label, count}) => ({
+            label: reportValue_(lang, REPORT_GROUPS[key], label), count
+          }))
+        }))
+      };
+    });
 }
 
 function exportReport_(report, format) {
   if (!Object.prototype.hasOwnProperty.call(EXPORT_MIME, format)) fail_(400);
-  const lang = report.filters.lang;
-  const matrix = [REPORT_HEADERS[lang], ...report.rows.map(row => REPORT_COLUMNS.map(key =>
-    key.endsWith('At') ? exportDate_(row[key], lang) : row[key]))];
   const mime = EXPORT_MIME[format];
   let blob;
   if (format === 'csv') {
+    const {groups} = report;
+    const headers = REPORT_HEADER_KEYS.map((_, index) =>
+      [...new Set(groups.map(group => group.headers[index]))].join(' / '));
+    const matrix = [headers, ...groups.flatMap(group => group.rows)];
     const csv = '\uFEFF' + matrix.map(row => row.map(value => {
       const cell = String(value == null ? '' : value);
       const safe = /^[\s\uFEFF]*[=+@-]|^[\t\r\n]/.test(cell) ? "'" + cell : cell;
@@ -451,7 +604,7 @@ function exportReport_(report, format) {
     }).join(',')).join('\r\n') + '\r\n';
     blob = Utilities.newBlob(csv, mime);
   } else {
-    blob = exportWorkbook_(matrix, report.charts, format);
+    blob = exportWorkbook_(report.groups, format);
   }
   return {name: 'bibile-complaints.' + format, mime, base64: Utilities.base64Encode(blob.getBytes())};
 }
@@ -474,20 +627,18 @@ function styleReportTitle_(sheet, lastColumn, title) {
     .setWrap(true).setVerticalAlignment('middle');
 }
 
-function addReportCharts_(book, charts) {
-  const sheet = book.insertSheet('Charts');
-  const titles = ['By status', 'By category', 'By GN division', 'By officer response'];
+function addReportCharts_(book, group) {
+  const sheet = book.insertSheet(group.chartsSheet);
   const colors = ['#0369a1', '#15803d', '#7e22ce', '#b45309'];
-  styleReportTitle_(sheet, 8, 'Complaint Report - Summary and Charts');
+  styleReportTitle_(sheet, 8, group.summaryTitle);
   sheet.setColumnWidth(1, 230);
   sheet.setColumnWidth(2, 76);
   sheet.setColumnWidth(3, 16);
   sheet.setColumnWidths(4, 5, 118);
   let top = 3;
-  Object.keys(REPORT_GROUPS).forEach((key, index) => {
-    const entries = charts[key];
+  group.charts.forEach(({title, entries}, index) => {
     const height = Math.max(220, 86 + entries.length * 22);
-    const rows = [[titles[index], 'Count'], ...entries.map(({label, count}) => ["'" + label, count])];
+    const rows = [[title, group.countLabel], ...entries.map(({label, count}) => ["'" + label, count])];
     const blockRows = entries.length ? Math.max(rows.length, Math.ceil(height / 25)) : rows.length;
     const end = top + blockRows - 1;
     if (end > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), end - sheet.getMaxRows());
@@ -499,7 +650,7 @@ function addReportCharts_(book, charts) {
     sheet.autoResizeRows(top, rows.length);
     if (entries.length) {
       sheet.insertChart(sheet.newChart().setChartType(Charts.ChartType.BAR).addRange(range)
-        .setNumHeaders(1).setPosition(top, 4, 0, 0).setOption('title', titles[index])
+        .setNumHeaders(1).setPosition(top, 4, 0, 0).setOption('title', title)
         .setOption('width', 580).setOption('height', height)
         .setOption('chartArea', {left: '37%', top: 44, width: '58%', height: '72%'})
         .setOption('legend', {position: 'none'}).setOption('colors', [colors[index]]).build());
@@ -511,21 +662,24 @@ function addReportCharts_(book, charts) {
   });
 }
 
-function exportWorkbook_(matrix, charts, format) {
-  const book = SpreadsheetApp.create('Bibile Pradeshiya Sabha - Complaint Report');
+function exportWorkbook_(groups, format) {
+  const book = SpreadsheetApp.create(groups[0].title);
   try {
-    const sheet = book.getSheets()[0];
-    sheet.setName('Complaints');
-    const count = matrix.length + 2;
-    if (count > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), count - sheet.getMaxRows());
-    styleReportTitle_(sheet, REPORT_COLUMNS.length, 'Bibile Pradeshiya Sabha - Complaint Report');
-    [272, 150, 150, 105, 131, 175, 175].forEach((width, index) => sheet.setColumnWidth(index + 1, width));
-    const values = matrix.map(row => row.map(value => value == null || value === '' ? '' : "'" + value));
-    sheet.getRange(3, 1, matrix.length, REPORT_COLUMNS.length).setNumberFormat('@').setValues(values);
-    styleReportTable_(sheet, 3, matrix, '#0369a1');
-    sheet.autoResizeRows(3, matrix.length);
-    sheet.setFrozenRows(3);
-    addReportCharts_(book, charts);
+    groups.forEach((group, index) => {
+      const sheet = index ? book.insertSheet(group.recordsSheet) : book.getSheets()[0];
+      if (!index) sheet.setName(group.recordsSheet);
+      const matrix = [group.headers, ...group.rows];
+      const count = matrix.length + 2;
+      if (count > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), count - sheet.getMaxRows());
+      styleReportTitle_(sheet, REPORT_COLUMNS.length, group.title);
+      [272, 150, 150, 105, 131, 175, 175].forEach((width, column) => sheet.setColumnWidth(column + 1, width));
+      const values = matrix.map(row => row.map(value => value == null || value === '' ? '' : "'" + value));
+      sheet.getRange(3, 1, matrix.length, REPORT_COLUMNS.length).setNumberFormat('@').setValues(values);
+      styleReportTable_(sheet, 3, matrix, '#0369a1');
+      sheet.autoResizeRows(3, matrix.length);
+      sheet.setFrozenRows(3);
+      addReportCharts_(book, group);
+    });
     SpreadsheetApp.flush();
     const url = 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(book.getId()) +
       '/export?format=' + format + (format === 'pdf' ?

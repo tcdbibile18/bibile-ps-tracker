@@ -184,40 +184,29 @@ function renderReport() {
   if (!reportData) return;
   const rows = select('#report-rows');
   const charts = select('#report-charts');
+  const localized = select('#report-localized');
+  const groups = reportData.groups;
+  rows.closest('.table-wrap').hidden = Boolean(groups);
+  charts.hidden = Boolean(groups);
+  localized.hidden = !groups;
   rows.replaceChildren();
   charts.replaceChildren();
-  for (const record of reportData.rows) {
-    const row = document.createElement('tr');
-    for (const value of [record.ticket, reportLabel('category', record.category),
-      reportLabel('division', record.division), reportLabel('status', record.status),
-      reportLabel('response', record.response), date(record.createdAt), date(record.updatedAt)]) {
-      appendText(row, 'td', value);
-    }
-    rows.append(row);
-  }
+  localized.replaceChildren();
   select('#report-empty').textContent = reportData.rows.length ? '' : translated('report.empty', 'No complaints match these filters.');
-  for (const [key, [caption, fallback, type]] of Object.entries(chartDefinitions)) {
-    const series = reportData.charts[key];
-    if (!series?.length) continue;
-    const chart = appendText(charts, 'section', '');
-    chart.className = 'report-chart';
-    chart.dataset.series = key;
-    appendText(chart, 'h3', translated(caption, fallback));
-    const bars = appendText(chart, 'ul', '');
-    bars.className = 'report-bars';
-    const max = Math.max(1, ...series.map(entry => entry.count));
-    for (const [index, entry] of series.entries()) {
-      const item = appendText(bars, 'li', '');
-      item.className = 'report-bar';
-      item.dataset.color = index % 6;
-      const name = reportLabel(type, entry.label);
-      appendText(item, 'span', name);
-      const meter = document.createElement('meter');
-      meter.max = max;
-      meter.value = entry.count;
-      meter.setAttribute('aria-label', name);
-      appendText(item, 'strong', entry.count);
-      item.append(meter);
+  if (groups) {
+    for (const group of groups) {
+      if (group.rows.length) renderLocalizedReport(localized, group);
+    }
+  } else {
+    for (const record of reportData.rows) {
+      const row = appendText(rows, 'tr', '');
+      for (const value of [record.ticket, reportLabel('category', record.category),
+        reportLabel('division', record.division), reportLabel('status', record.status),
+        reportLabel('response', record.response), date(record.createdAt), date(record.updatedAt)]) appendText(row, 'td', value);
+    }
+    for (const [key, [caption, fallback, type]] of Object.entries(chartDefinitions)) {
+      renderReportChart(charts, key, translated(caption, fallback), (reportData.charts[key] || []).map(({label, count}) =>
+        ({label: reportLabel(type, label), count})));
     }
   }
   const params = new URLSearchParams(reportParams);
@@ -228,6 +217,51 @@ function renderReport() {
   reportResults.hidden = false;
 }
 
+function renderLocalizedReport(root, group) {
+  const section = appendText(root, 'section', '');
+  section.lang = group.lang;
+  appendText(section, 'h3', group.title);
+  const wrapper = appendText(section, 'div', '');
+  wrapper.className = 'table-wrap';
+  wrapper.tabIndex = 0;
+  wrapper.setAttribute('role', 'region');
+  wrapper.setAttribute('aria-label', group.title);
+  const table = appendText(wrapper, 'table', '');
+  const head = appendText(appendText(table, 'thead', ''), 'tr', '');
+  for (const title of group.headers) appendText(head, 'th', title).scope = 'col';
+  const body = appendText(table, 'tbody', '');
+  for (const values of group.rows) {
+    const row = appendText(body, 'tr', '');
+    for (const value of values) appendText(row, 'td', value);
+  }
+  const charts = appendText(section, 'div', '');
+  charts.className = 'report-charts';
+  for (const {key, title, entries} of group.charts) renderReportChart(charts, key, title, entries);
+}
+
+function renderReportChart(root, key, title, series) {
+  if (!series.length) return;
+  const chart = appendText(root, 'section', '');
+  chart.className = 'report-chart';
+  chart.dataset.series = key;
+  appendText(chart, 'h4', title);
+  const bars = appendText(chart, 'ul', '');
+  bars.className = 'report-bars';
+  const max = Math.max(1, ...series.map(entry => entry.count));
+  for (const [index, {label, count}] of series.entries()) {
+    const item = appendText(bars, 'li', '');
+    item.className = 'report-bar';
+    item.dataset.color = index % 6;
+    appendText(item, 'span', label);
+    const meter = document.createElement('meter');
+    meter.max = max;
+    meter.value = count;
+    meter.setAttribute('aria-label', label);
+    appendText(item, 'strong', count);
+    item.append(meter);
+  }
+}
+
 if (staticBackend) {
   const allCsv = select('[href="/api/admin/export"]');
   allCsv.href = '#staff-list-title';
@@ -235,7 +269,7 @@ if (staticBackend) {
   for (const link of document.querySelectorAll('[data-report-export]')) {
     bindStaticExport(link, () => {
       const params = new URLSearchParams(reportParams);
-      params.set('lang', document.documentElement.lang);
+      params.set('lang', reportData?.filters?.lang || document.documentElement.lang);
       return '/api/admin/report.' + link.dataset.reportExport + '?' + params;
     }, reportForm);
   }
@@ -303,6 +337,7 @@ function invalidateReport() {
   reportResults.hidden = true;
   select('#report-rows').replaceChildren();
   select('#report-charts').replaceChildren();
+  select('#report-localized').replaceChildren();
 }
 
 function clearAdminTools() {

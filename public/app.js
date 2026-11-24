@@ -59,6 +59,7 @@ function handleForm(form, action, errorText = 'Something went wrong. Please try 
     } catch (error) {
       const unauthorized = form.id === 'login-form' && [401, 403].includes(error.status);
       if (error.setup) showMessage(form, 'static.setup', 'The complaint service has not been configured.');
+      else if (error.code === 'reference_exhausted') showMessage(form, 'complaint.referenceExhausted', 'No complaint reference numbers are available. Please contact the council.');
       else if (staticBackend && error.status === 413) showMessage(form, 'static.photoSize', 'Use a photo up to 2 MB.');
       else if (staticBackend && error.status === 401 && !unauthorized) {
         showMessage(form, 'static.session', 'Reload the page and sign in again.');
@@ -196,6 +197,7 @@ if (complaint) {
   handleForm(complaint, async body => {
     if (!body.get('nic')?.trim()) body.delete('nic');
     if (!body.get('photo')?.size) body.delete('photo');
+    if (staticBackend) body.set('lang', document.documentElement.lang);
     const result = await request('/api/complaints', {method: 'POST', body});
     if (!result?.ticket) throw new Error('Missing ticket');
     ticketNumber.textContent = result.ticket;

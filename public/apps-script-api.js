@@ -70,7 +70,9 @@ const appsScriptRequest = (() => {
       });
       if (!response.ok) throw appsScriptError(response.status);
       const result = await response.json();
-      if (!result.ok) throw Object.assign(appsScriptError(result.status), {setup: result.code === 'setup_required'});
+      if (!result.ok) throw Object.assign(appsScriptError(result.status), {
+        code: result.code, setup: result.code === 'setup_required'
+      });
       if (action === 'login') token = result.data.token;
       return result.data;
     } finally {

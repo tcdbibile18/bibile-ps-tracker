@@ -221,7 +221,8 @@ th { background: var(--paper); }
 
 .report-chart:nth-child(3n + 2) { --meter-color: #0f766e; }
 .report-chart:nth-child(3n) { --meter-color: #7e22ce; }
-.report-chart :is(h3, figcaption) { margin: 0 0 .75rem; font-weight: 700; }
+.report-chart :is(h3, h4, figcaption) { margin: 0 0 .75rem; font-weight: 700; }
+#report-localized > section + section { margin-top: 1.5rem; }
 
 .report-bars,
 .history-list {
