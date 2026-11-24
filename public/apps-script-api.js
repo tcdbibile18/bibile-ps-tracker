@@ -1,6 +1,6 @@
 'use strict';
 
-const staticBackend = window.STATIC_FRONTEND || Boolean(window.APPS_SCRIPT_URL);
+const staticBackend = window.STATIC_FRONTEND;
 
 function appsScriptError(status) {
   return Object.assign(new Error('Apps Script request failed'), {status});

@@ -26,7 +26,7 @@ jobs:
         env:
           APPS_SCRIPT_URL: ${{ vars.APPS_SCRIPT_URL }}
         run: |
-          node -e 'const fs = require("node:fs"); const url = process.env.APPS_SCRIPT_URL; if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) throw new Error("Set the APPS_SCRIPT_URL repository variable to the deployed Apps Script URL."); fs.writeFileSync("public/config.js", "window.APPS_SCRIPT_URL = " + JSON.stringify(url) + ";\nwindow.STATIC_FRONTEND = true;\n");'
+          node -e 'const fs = require("node:fs"); const file = "public/config.js"; const {window} = require("node:vm").runInNewContext(fs.readFileSync(file, "utf8") + "\n({window})", {window: {}, location: {hostname: ""}}); const url = process.env.APPS_SCRIPT_URL || window.APPS_SCRIPT_URL; if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) throw new Error("Set APPS_SCRIPT_URL in public/config.js or in the repository variables."); fs.writeFileSync(file, "window.APPS_SCRIPT_URL = " + JSON.stringify(url) + ";\nwindow.STATIC_FRONTEND = true;\n");'
       - uses: actions/upload-pages-artifact@v4
         with:
           path: public
