@@ -117,6 +117,12 @@ async function privatePhoto(parent, ticket, kind, key, fallback) {
   const figure = document.createElement('figure');
   const caption = appendText(figure, 'figcaption', translated(key, fallback));
   parent.append(figure);
+  if (selected?.ticket === ticket && !selected.trashedAt) {
+    const remove = appendText(figure, 'button', translated('attachment.delete', 'Delete photo'));
+    remove.type = 'button';
+    remove.className = 'btn btn-danger';
+    remove.addEventListener('click', () => deleteStaffPhoto(remove, ticket, kind));
+  }
   try {
     const params = new URLSearchParams({ticket, kind});
     const {mime, base64} = await request('/api/admin/photo?' + params);
@@ -288,12 +294,6 @@ async function loadStaff() {
 }
 
 if (login) {
-  if (staticBackend) {
-    select('[data-staff-view="bin"]').hidden = true;
-    select('[href="/api/admin/export"]').parentElement.hidden = true;
-    select('.report-panel').hidden = true;
-    select('#record-actions').hidden = true;
-  }
   handleForm(login, async body => {
     await request('/api/login', {
       method: 'POST',

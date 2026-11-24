@@ -267,6 +267,7 @@ function update_(data) {
     const found = find_(sheet, data.ticket);
     if (!found) fail_(404);
     const {record, row} = found;
+    if (record.trashedAt) fail_(409);
     const timestamp = new Date().toISOString();
     const oldProof = record.proof;
     let proof = '';
@@ -294,11 +295,12 @@ function dispatch_(action, token, data) {
   if (action === 'track') {
     const ticket = typeof data.q === 'string' ? data.q.trim().toUpperCase() : '';
     const found = find_(sheet_(), ticket);
-    return found ? [summary_(found.record)] : [];
+    return found && !found.record.trashedAt ? [summary_(found.record)] : [];
   }
   if (action === 'stats') {
     const counts = {total: 0, pending: 0, inProgress: 0, resolved: 0};
-    for (const {status} of rows_(sheet_())) {
+    for (const {status, trashedAt} of rows_(sheet_())) {
+      if (trashedAt) continue;
       counts.total++;
       counts[status === 'in_progress' ? 'inProgress' : status]++;
     }
@@ -310,17 +312,194 @@ function dispatch_(action, token, data) {
     CacheService.getScriptCache().remove(session);
     return null;
   }
-  if (action === 'list') return rows_(sheet_()).reverse().map(staffRecord_);
+  if (action === 'list') {
+    const view = data.view || 'active';
+    if (!['active', 'bin'].includes(view)) fail_(400);
+    return rows_(sheet_()).reverse().filter(record => Boolean(record.trashedAt) === (view === 'bin')).map(staffRecord_);
+  }
   if (action === 'update') return update_(data);
+  if (['trash', 'restore', 'purge', 'deletePhoto'].includes(action)) return mutateRecord_(action, data);
+  if (action === 'report' || action === 'export') {
+    const report = report_(data);
+    return action === 'report' ? report : exportReport_(report, data.format);
+  }
   if (action === 'history' || action === 'photo') {
     const found = find_(sheet_(), data.ticket);
     if (!found) fail_(404);
     if (action === 'history') return found.record.history;
     if (!['photo', 'proof'].includes(data.kind) || !found.record[data.kind]) fail_(404);
-    const blob = DriveApp.getFileById(found.record[data.kind]).getBlob();
+    const file = DriveApp.getFileById(found.record[data.kind]);
+    if (file.isTrashed()) fail_(404);
+    const blob = file.getBlob();
     const mime = blob.getContentType();
     if (!Object.prototype.hasOwnProperty.call(IMAGE_TYPES, mime)) fail_(404);
     return {mime, base64: Utilities.base64Encode(blob.getBytes())};
   }
   fail_(404);
+}
+
+function trashAttachment_(id) {
+  if (!id) return;
+  const file = DriveApp.getFileById(id);
+  if (!file.isTrashed()) file.setTrashed(true);
+}
+
+function mutateRecord_(action, data) {
+  if (['purge', 'deletePhoto'].includes(action) && data.confirmed !== true) fail_(400);
+  if (action === 'deletePhoto' && !['photo', 'proof'].includes(data.kind)) fail_(400);
+  return locked_(() => {
+    const sheet = sheet_();
+    const found = find_(sheet, data.ticket);
+    if (!found) fail_(404);
+    const {record, row} = found;
+    if (action === 'purge') {
+      if (!record.trashedAt) fail_(409);
+      trashAttachment_(record.photo);
+      trashAttachment_(record.proof);
+      sheet.deleteRow(row);
+      return {success: true};
+    }
+    if (action === 'deletePhoto') {
+      if (record.trashedAt) fail_(409);
+      if (record[data.kind]) {
+        trashAttachment_(record[data.kind]);
+        record[data.kind] = '';
+        record.updatedAt = new Date().toISOString();
+      }
+    } else if (action === 'trash') {
+      if (record.status !== 'resolved') fail_(409);
+      record.trashedAt ||= new Date().toISOString();
+    } else {
+      record.trashedAt = '';
+    }
+    writeRecord_(sheet, row, record);
+    return staffRecord_(record);
+  });
+}
+
+const REPORT_COLUMNS = ['ticket', 'category', 'division', 'status', 'response', 'createdAt', 'updatedAt'];
+const REPORT_HEADERS = {
+  en: ['Reference', 'Category', 'GN division', 'Status', 'Officer response', 'Submitted', 'Updated'],
+  si: ['යොමු අංකය', 'සේවා කාණ්ඩය', 'ග්‍රාම නිලධාරී වසම', 'තත්ත්වය', 'නිලධාරී පිළිතුර', 'ඉදිරිපත් කළ දිනය', 'යාවත්කාලීන කළ දිනය'],
+  ta: ['குறிப்பு எண்', 'வகை', 'கிராம அலுவலர் பிரிவு', 'நிலை', 'அலுவலர் பதில்', 'சமர்ப்பித்த தேதி', 'புதுப்பித்த தேதி']
+};
+const REPORT_GROUPS = {byStatus: 'status', byCategory: 'category', byDivision: 'division', byResponse: 'response'};
+
+function report_(data) {
+  const filters = {};
+  for (const key of ['from', 'to', 'category', 'division', 'status', 'response', 'lang']) {
+    if (data[key] != null && typeof data[key] !== 'string') fail_(400);
+    filters[key] = text_(data[key], 200, true);
+  }
+  filters.lang ||= 'si';
+  for (const value of [filters.from, filters.to]) {
+    if (!value) continue;
+    const date = new Date(value + 'T00:00:00Z');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(date.getTime()) ||
+        date.toISOString().slice(0, 10) !== value) fail_(400);
+  }
+  if ((filters.from && filters.to && filters.from > filters.to) ||
+      (filters.status && !STATUSES.includes(filters.status)) ||
+      (filters.response && !['responded', 'unresponded'].includes(filters.response)) ||
+      !Object.prototype.hasOwnProperty.call(REPORT_HEADERS, filters.lang)) fail_(400);
+  const divisionName = value => value === 'Bibile Town' ? 'Bibile' : value;
+  filters.division = divisionName(filters.division);
+  const rows = rows_(sheet_()).reverse().filter(record => !record.trashedAt).map(record => ({
+    ...summary_(record),
+    division: divisionName(record.division),
+    response: record.remarks?.trim() || record.proof ? 'responded' : 'unresponded'
+  })).filter(row => {
+    if (['category', 'division', 'status', 'response'].some(key => filters[key] && row[key] !== filters[key])) return false;
+    if (!filters.from && !filters.to) return true;
+    const day = Utilities.formatDate(new Date(row.createdAt), 'Asia/Colombo', 'yyyy-MM-dd');
+    return (!filters.from || day >= filters.from) && (!filters.to || day <= filters.to);
+  });
+  const charts = {};
+  for (const [key, field] of Object.entries(REPORT_GROUPS)) {
+    const counts = new Map();
+    for (const row of rows) counts.set(row[field], (counts.get(row[field]) || 0) + 1);
+    charts[key] = [...counts].map(([label, count]) => ({label, count})).sort((a, b) => a.label.localeCompare(b.label));
+  }
+  return {rows, charts, filters};
+}
+
+const EXPORT_MIME = {
+  csv: 'text/csv', pdf: 'application/pdf', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+};
+const REPORT_MONTHS_SI = ['ජනවාරි', 'පෙබරවාරි', 'මාර්තු', 'අප්‍රේල්', 'මැයි', 'ජූනි',
+  'ජූලි', 'අගෝස්තු', 'සැප්තැම්බර්', 'ඔක්තෝබර්', 'නොවැම්බර්', 'දෙසැම්බර්'];
+
+function exportDate_(value, lang) {
+  const date = new Date(value);
+  if (lang !== 'si') return Utilities.formatDate(date, 'Asia/Colombo', 'yyyy-MM-dd HH:mm');
+  const [year, month, day, time] = Utilities.formatDate(date, 'Asia/Colombo', 'yyyy-M-dd-HH:mm').split('-');
+  return year + ' ' + REPORT_MONTHS_SI[Number(month) - 1] + ' ' + day + ' ' + time;
+}
+
+function exportReport_(report, format) {
+  if (!Object.prototype.hasOwnProperty.call(EXPORT_MIME, format)) fail_(400);
+  const lang = report.filters.lang;
+  const matrix = [REPORT_HEADERS[lang], ...report.rows.map(row => REPORT_COLUMNS.map(key =>
+    key.endsWith('At') ? exportDate_(row[key], lang) : row[key]))];
+  const mime = EXPORT_MIME[format];
+  let blob;
+  if (format === 'csv') {
+    const csv = '\uFEFF' + matrix.map(row => row.map(value => {
+      const cell = String(value ?? '');
+      const safe = /^[\s\uFEFF]*[=+@-]|^[\t\r\n]/.test(cell) ? "'" + cell : cell;
+      return '"' + safe.replace(/"/g, '""') + '"';
+    }).join(',')).join('\r\n') + '\r\n';
+    blob = Utilities.newBlob(csv, mime);
+  } else {
+    blob = exportWorkbook_(matrix, report.charts, format);
+  }
+  return {name: 'bibile-complaints.' + format, mime, base64: Utilities.base64Encode(blob.getBytes())};
+}
+
+function exportWorkbook_(matrix, charts, format) {
+  const book = SpreadsheetApp.create('Bibile Pradeshiya Sabha - Complaint Report');
+  try {
+    const sheet = book.getSheets()[0];
+    sheet.setName('Complaints');
+    const count = matrix.length + 2;
+    if (count > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), count - sheet.getMaxRows());
+    sheet.getRange('A1:G1').merge().setValue('Bibile Pradeshiya Sabha - Complaint Report')
+      .setBackground('#0c4a6e').setFontColor('#ffffff').setFontWeight('bold');
+    const values = matrix.map(row => row.map(value => value == null || value === '' ? '' : "'" + value));
+    sheet.getRange(3, 1, matrix.length, REPORT_COLUMNS.length).setNumberFormat('@').setValues(values);
+    sheet.getRange('A3:G3').setBackground('#0369a1').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setFrozenRows(3);
+    sheet.autoResizeColumns(1, REPORT_COLUMNS.length);
+    const summary = book.insertSheet('Charts');
+    const titles = ['By status', 'By category', 'By GN division', 'By officer response'];
+    const colors = ['#0369a1', '#15803d', '#7e22ce', '#b45309'];
+    Object.values(charts).forEach((entries, index) => {
+      const top = summary.getLastRow() + 2;
+      const rows = [[titles[index], 'Count'], ...entries.map(({label, count}) => ["'" + label, count])];
+      const end = top + Math.max(rows.length, 18);
+      if (end > summary.getMaxRows()) summary.insertRowsAfter(summary.getMaxRows(), end - summary.getMaxRows());
+      const range = summary.getRange(top, 1, rows.length, 2);
+      range.setValues(rows);
+      summary.getRange(top, 1, 1, 2).setBackground(colors[index]).setFontColor('#ffffff').setFontWeight('bold');
+      if (!entries.length) return;
+      summary.insertChart(summary.newChart().setChartType(Charts.ChartType.BAR).addRange(range)
+        .setNumHeaders(1).setPosition(top, 4, 0, 0).setOption('title', titles[index])
+        .setOption('legend', {position: 'none'}).setOption('colors', [colors[index]]).build());
+      // Reserve space before the next chart even when a series has only a few entries.
+      summary.getRange(end, 1).setValue(' ');
+    });
+    summary.autoResizeColumns(1, 2);
+    SpreadsheetApp.flush();
+    const url = 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(book.getId()) +
+      '/export?format=' + format + (format === 'pdf' ? '&size=A4&portrait=false&fitw=true&gridlines=false' : '');
+    const response = UrlFetchApp.fetch(url, {
+      headers: {Authorization: 'Bearer ' + ScriptApp.getOAuthToken()},
+      muteHttpExceptions: true
+    });
+    const blob = response.getBlob();
+    if (response.getResponseCode() !== 200 || !blob.getContentType().startsWith(EXPORT_MIME[format])) fail_(502);
+    return blob;
+  } finally {
+    discard_(book.getId());
+  }
 }

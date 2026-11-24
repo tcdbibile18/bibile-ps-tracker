@@ -16,6 +16,13 @@
    Alternatively, select **Deploy from a branch**, choose `main` and `/(root)`, and save. The root `index.html` opens the citizen portal in `public/`. This option uses the URL already committed in `public/config.js`.
 6. Open the Pages URL in a signed-out browser. Submit a synthetic complaint with a small JPEG or PNG, confirm the receipt and track the reference. Use the staff link to sign in, view the image, change status, add a remark, and confirm the public tracking result changed. Test that a signed-out browser cannot access staff records. Delete synthetic test data directly from the private sheet and Drive folder once finished.
 
-Public tracking exposes only the reference, category, status and timestamps. Photos (JPEG, PNG, WebP or GIF, up to 2 MiB each) stay in Drive and are returned only to a signed-in officer. The officer session stays in the current page and expires after one hour or when the page is refreshed. Apps Script quotas apply. The Apps Script version supports the citizen and staff flows above. Phone tracking, the recycle bin and report exports remain available in the Node version. Existing SQLite records are not imported automatically.
+Public tracking exposes only the reference, category, status and timestamps. Photos (JPEG, PNG, WebP or GIF, up to 2 MiB each) stay in Drive and are returned only to a signed-in officer. The officer session stays in the current page and expires after one hour or when the page is refreshed. Phone tracking stays available in the Node version. Existing SQLite records are not imported automatically.
+
+### Recycle Bin, attachments and reports
+
+- Officers can move resolved complaints to the Recycle Bin. These complaints disappear from public tracking, counters, active complaints and reports. Restoring returns the complaint and its attachments to the active list.
+- Permanent deletion removes the complaint row and moves its attachments to Google Drive trash. Remove a citizen photo or resolution photo individually from the active complaint details. Google Drive manages retention of files in its trash.
+- Run a report by date (Sri Lanka time), category, division, status or officer response. Export the results as CSV, PDF or XLSX. PDF and XLSX use a temporary private spreadsheet with a second sheet for the charts. The script moves the temporary spreadsheet to Drive trash after export. Apps Script and Drive quotas apply.
+- When updating an existing Apps Script deployment, replace `Code.gs`, run `setup` as the owner and approve any newly requested permissions, including permission to make external HTTP requests for PDF and XLSX. Deploy a new version of the existing Web App and republish the frontend if needed.
 
 References: [Apps Script web apps](https://developers.google.com/apps-script/guides/web) and [GitHub Pages publishing sources](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-site).

@@ -28,14 +28,22 @@ const appsScriptRequest = (() => {
     'GET /api/admin/complaints': 'list',
     'PATCH /api/admin/complaints': 'update',
     'GET /api/admin/history': 'history',
-    'GET /api/admin/photo': 'photo'
+    'GET /api/admin/photo': 'photo',
+    'POST /api/admin/trash': 'trash',
+    'POST /api/admin/restore': 'restore',
+    'DELETE /api/admin/complaints': 'purge',
+    'DELETE /api/admin/attachment': 'deletePhoto',
+    'GET /api/admin/report': 'report',
+    'GET /api/admin/export': 'export'
   };
 
   return async (path, {method = 'GET', body} = {}) => {
     if (path === '/api/session') return {authenticated: Boolean(token)};
     const route = new URL(path, location.origin);
-    const record = /^\/api\/admin\/complaints\/([^/]+)(\/history)?$/.exec(route.pathname);
-    const target = record ? '/api/admin/' + (record[2] ? 'history' : 'complaints') : route.pathname;
+    const record = /^\/api\/admin\/complaints\/([^/]+)(?:\/(history|trash|restore))?$/.exec(route.pathname);
+    const reportFile = /^\/api\/admin\/report\.(csv|pdf|xlsx)$/.exec(route.pathname);
+    const target = record ? '/api/admin/' + (record[2] || 'complaints') :
+      reportFile ? '/api/admin/export' : route.pathname;
     const action = actions[method + ' ' + target];
     if (!action) throw appsScriptError(404);
 
@@ -46,6 +54,7 @@ const appsScriptRequest = (() => {
 
     const data = Object.fromEntries(route.searchParams);
     if (record) data.ticket = decodeURIComponent(record[1]);
+    if (action === 'export') data.format = reportFile ? reportFile[1] : 'csv';
     if (body instanceof FormData) {
       for (const [key, value] of body) data[key] = typeof value === 'string' ? value : await readUpload(value);
     } else if (typeof body === 'string') {

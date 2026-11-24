@@ -101,6 +101,29 @@ async function refreshAfterChange() {
   }
 }
 
+async function deleteStaffPhoto(button, ticket, kind) {
+  if (button.disabled || selected?.ticket !== ticket || selected.trashedAt) return;
+  if (!window.confirm(translated('attachment.confirm', 'Remove this photo from the complaint and move it to Drive trash?'))) return;
+  button.disabled = true;
+  showMessage(recordActions);
+  try {
+    const query = new URLSearchParams({ticket, kind});
+    const record = await request('/api/admin/attachment?' + query, {
+      method: 'DELETE',
+      body: JSON.stringify({confirmed: true})
+    });
+    if (selected?.ticket === ticket && staffDialog.open) {
+      selected = record;
+      renderDetails(record);
+    }
+    await refreshAfterChange();
+  } catch {
+    showMessage(recordActions, 'common.error', 'Something went wrong. Please try again.');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function bindRecordAction(button, action) {
   button.addEventListener('click', async () => {
     if (!selected || button.hidden || button.disabled) return;
@@ -200,9 +223,46 @@ function renderReport() {
   const params = new URLSearchParams(reportParams);
   params.set('lang', document.documentElement.lang);
   for (const link of document.querySelectorAll('[data-report-export]')) {
-    link.href = '/api/admin/report.' + link.dataset.reportExport + '?' + params;
+    link.href = staticBackend ? '#report-results' : '/api/admin/report.' + link.dataset.reportExport + '?' + params;
   }
   reportResults.hidden = false;
+}
+
+if (staticBackend) {
+  const allCsv = select('[href="/api/admin/export"]');
+  allCsv.href = '#staff-list-title';
+  bindStaticExport(allCsv, () => '/api/admin/export?' + new URLSearchParams({lang: document.documentElement.lang}), staffPanel);
+  for (const link of document.querySelectorAll('[data-report-export]')) {
+    bindStaticExport(link, () => {
+      const params = new URLSearchParams(reportParams);
+      params.set('lang', document.documentElement.lang);
+      return '/api/admin/report.' + link.dataset.reportExport + '?' + params;
+    }, reportForm);
+  }
+}
+
+function bindStaticExport(link, path, messages) {
+  link.addEventListener('click', async event => {
+    event.preventDefault();
+    if (link.getAttribute('aria-disabled') === 'true') return;
+    link.setAttribute('aria-disabled', 'true');
+    showMessage(messages, 'report.preparing', 'Preparing the report…');
+    try {
+      const file = await request(path());
+      const bytes = Uint8Array.from(atob(file.base64), char => char.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], {type: file.mime}));
+      const download = document.createElement('a');
+      download.href = url;
+      download.download = file.name;
+      download.click();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      showMessage(messages);
+    } catch {
+      showMessage(messages, 'common.error', 'Something went wrong. Please try again.');
+    } finally {
+      link.removeAttribute('aria-disabled');
+    }
+  });
 }
 
 handleForm(reportForm, async body => {
